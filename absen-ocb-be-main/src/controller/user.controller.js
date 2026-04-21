@@ -419,7 +419,8 @@ const profileUsersWeb = async (req, res) => {
       message: "Get User Profiles Success",
       status: "success",
       status_code: "200",
-      data: data,
+      data: rows,
+      data_object: data,
     });
   } catch (error) {
     console.error("Error:", error);
