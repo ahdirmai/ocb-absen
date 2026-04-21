@@ -369,6 +369,7 @@ const profileUsers = async (req, res) => {
     const [rows] = await usersModel.profileUsers(idUser);
     const data = rows[0];
     const idPotongan = 2;
+    const currentPeriod = new Date().toISOString().slice(0, 7);
 
     if (!data) {
       return res.status(404).json({
@@ -381,14 +382,24 @@ const profileUsers = async (req, res) => {
     const getPotonganMangkir = await usersModel.getPotonganMangkir(idPotongan);
     const PotonganMangkir = getPotonganMangkir?.value || 0;
     const [feeRows] = await usersModel.getFeePerUser(idUser, PotonganMangkir);
-    const feeData = feeRows?.[0] || null;
+    const feeData = feeRows?.[0] || {
+      user_id: data.user_id,
+      name: data.name,
+      period: currentPeriod,
+      total_gaji_awal: 0,
+      potongan_terlambat: 0,
+      potongan_kehadiran: 0,
+      bonus: 0,
+      total_deduction: 0,
+      total_gaji_akhir: 0,
+    };
 
     res.json({
       message: "Get User Profiles Success",
       status: "success",
       status_code: "200",
-      data: data,
-      fee: feeData,
+      data: [data],
+      fee: [feeData],
     });
   } catch (error) {
     console.error("Error:", error);
