@@ -6,6 +6,7 @@ import { jwtDecode } from "jwt-decode";
 const VITE_API_URL = import.meta.env.VITE_API_URL;
 
 const initialLocation = { latitude: null, longitude: null };
+const buildAuthKey = (token, userId) => `${userId || ""}:${token || ""}`;
 
 const AbsenKaryawan = () => {
   const [loading, setLoading] = useState(false);
@@ -25,6 +26,7 @@ const AbsenKaryawan = () => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const isRequestingLocationRef = useRef(false);
+  const activeAuthKeyRef = useRef("");
 
   const hasLocation = location.latitude !== null && location.longitude !== null;
 
@@ -44,10 +46,7 @@ const AbsenKaryawan = () => {
     setCameraActive(false);
   };
 
-  const resetSession = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("userId");
-    setIsLoggedIn(false);
+  const resetUserScopedState = () => {
     setUserProfile(null);
     setAbsenTypes([]);
     setSelectedAbsenType("");
@@ -55,9 +54,24 @@ const AbsenKaryawan = () => {
     setPhotoPreview(null);
     setLocation(initialLocation);
     setLocationError("");
+    stopCamera();
+  };
+
+  const resetSession = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("userId");
+    sessionStorage.removeItem("userProfile");
+    activeAuthKeyRef.current = "";
+    setIsLoggedIn(false);
+    resetUserScopedState();
     setUsername("");
     setPassword("");
-    stopCamera();
+  };
+
+  const applyAuthSession = (token, userId) => {
+    localStorage.setItem("token", token);
+    localStorage.setItem("userId", userId);
+    activeAuthKeyRef.current = buildAuthKey(token, userId);
   };
 
   const getAuthData = () => {
@@ -132,12 +146,18 @@ const AbsenKaryawan = () => {
   };
 
   const fetchAbsenTypes = async (token, userId) => {
+    const authKey = buildAuthKey(token, userId);
+
     try {
       const response = await axios.post(
         `${VITE_API_URL}/absen-management/shift-user/${userId}`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
+
+      if (activeAuthKeyRef.current !== authKey) {
+        return;
+      }
 
       if (response.data.status === "success") {
         const availableTypes = Array.isArray(response.data.data)
@@ -173,6 +193,8 @@ const AbsenKaryawan = () => {
   };
 
   const fetchProfile = async (token, userId) => {
+    const authKey = buildAuthKey(token, userId);
+
     try {
       const response = await axios.post(
         `${VITE_API_URL}/users/profile/${userId}`,
@@ -180,7 +202,15 @@ const AbsenKaryawan = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
+      if (activeAuthKeyRef.current !== authKey) {
+        return;
+      }
+
       setUserProfile(response.data.data || null);
+      sessionStorage.setItem(
+        "userProfile",
+        JSON.stringify(response.data.data || null)
+      );
       await fetchAbsenTypes(token, userId);
     } catch (error) {
       console.error("Error fetching profile:", error);
@@ -207,6 +237,7 @@ const AbsenKaryawan = () => {
 
     try {
       jwtDecode(authData.token);
+      activeAuthKeyRef.current = buildAuthKey(authData.token, authData.userId);
       setIsLoggedIn(true);
       fetchProfile(authData.token, authData.userId);
     } catch (error) {
@@ -263,9 +294,8 @@ const AbsenKaryawan = () => {
         const decoded = jwtDecode(token);
         const userId = decoded.id;
 
-        localStorage.setItem("token", token);
-        localStorage.setItem("userId", userId);
-
+        resetUserScopedState();
+        applyAuthSession(token, userId);
         setIsLoggedIn(true);
         await fetchProfile(token, userId);
       } else {
