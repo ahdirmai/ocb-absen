@@ -55,20 +55,21 @@ const getUserUpline =async (idUser) =>{
 const profileUsers = (idUser) =>{
     const SQLQuery = `SELECT DISTINCT u.user_id, u.username, u.name, u.imei,  
        up.name as upline, up.user_id as id_upline,  
-       GROUP_CONCAT(DISTINCT r.name ORDER BY r.name SEPARATOR ', ') AS retail_name,  
+       GROUP_CONCAT(DISTINCT r.name ORDER BY r.name SEPARATOR ', ') AS retail_name,
+       MIN(r.retail_id) AS retail_id,
        ur.name_role as role, ur.role_id,  
        uc.category_user, uc.id_category, u.photo_url  
 FROM user u  
 JOIN user_category uc ON uc.id_category = u.category_user  
 JOIN user_role ur ON uc.role_id = ur.role_id  
 LEFT JOIN user up ON up.user_id = u.upline  
-LEFT JOIN shift_employes se ON se.user_id = u.user_id OR se.user_id = 0  
+LEFT JOIN shift_employes se ON se.user_id = u.user_id  
 LEFT JOIN shifting s ON s.shifting_id = se.shifting_id AND CURDATE() BETWEEN s.start_date AND s.end_date  
 LEFT JOIN retail r ON r.retail_id = s.retail_id  
-WHERE u.user_id = ${idUser} AND (s.is_Deleted = 0 OR s.shifting_id IS NULL)  
+WHERE u.user_id = ? AND (s.is_Deleted = 0 OR s.shifting_id IS NULL)  
 GROUP BY u.user_id, u.username, u.name, u.imei, up.name, up.user_id, ur.name_role, ur.role_id, uc.category_user, uc.id_category, u.photo_url`;
 
-    return dbpool.execute(SQLQuery);
+    return dbpool.execute(SQLQuery, [idUser]);
 }
 
 const profileUsersWeb = (idUser) =>{
@@ -77,9 +78,9 @@ const profileUsersWeb = (idUser) =>{
                       jOIN user_category uc ON uc.id_category = u.category_user
                       JOIN user_role ur ON uc.role_id = ur.role_id
                       LEFT JOIN user up ON up.user_id = u.upline
-                      WHERE u.user_id =${idUser} `;
+                      WHERE u.user_id = ? `;
 
-    return dbpool.execute(SQLQuery);
+    return dbpool.execute(SQLQuery, [idUser]);
 }
 
 

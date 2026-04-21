@@ -180,6 +180,16 @@ const getTypeAbsenPerShift = async(req, res) =>{
     try{
         const [data] = await absenManagementModel.getTypeAbsenPerShift(userId);
         const flagAbsen = await absenManagementModel.checkFlagAbsen(userId);
+        const uniqueData = Array.isArray(data)
+            ? data.filter(
+                (item, index, array) =>
+                  index ===
+                  array.findIndex(
+                    (current) =>
+                      String(current.absen_id) === String(item.absen_id)
+                  )
+              )
+            : [];
         if(flagAbsen){
             isAbsenToday = 1;
         }else{
@@ -191,7 +201,7 @@ const getTypeAbsenPerShift = async(req, res) =>{
             status : "success",
             status_code : "200",
             is_absen_today : isAbsenToday,
-            data : data
+            data : uniqueData
         })
     }
     catch(error){

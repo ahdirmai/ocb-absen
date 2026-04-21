@@ -87,7 +87,7 @@ const createNewGroupAbsen = async (groupDetails) => {
 };
 
 const getTypeAbsenPerShift = async (userId) => {
-  const SQLQuery = `SELECT 
+  const SQLQuery = `SELECT DISTINCT
     t.absen_id, 
     t.name, 
     t.description, 
@@ -117,10 +117,11 @@ JOIN
 LEFT JOIN 
   (select absensi_id, absen_type_id, user_id from absensi where absen_time >= CURDATE() AND is_valid=1 ) a on a.absen_type_id = t.absen_id AND a.user_id = u.user_id
 WHERE 
-    se.user_id = ${userId} 
+    se.user_id = ? 
     AND s.start_date <= CURDATE() 
-    AND s.end_date >= CURDATE() `;
-  return dbpool.execute(SQLQuery);
+    AND s.end_date >= CURDATE()
+ORDER BY t.name ASC`;
+  return dbpool.execute(SQLQuery, [userId]);
 };
 
 const checkFlagAbsen = async (user_id) => {

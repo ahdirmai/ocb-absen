@@ -1,5 +1,5 @@
 require('dotenv').config();
-const PORT  = process.env.PORT || 4000;
+const PORT = process.env.PORT || 4000;
 const express = require('express');
 const usersRoutes = require('./routes/users');
 const retailRoutes = require('./routes/retailManagement');
@@ -19,7 +19,7 @@ const cors = require('cors');
 const app = express();
 app.use(cors({
     origin: true //allow semua origin
-  }));
+}));
 app.use(morgan('dev'))
 // app.use(midllewareLogRequest)
 app.use(express.json())
@@ -40,19 +40,19 @@ app.use('/api/management', feeRoutes);
 app.use('/api/user-management', managementUser);
 app.use('/api/menu', menuRoutes);
 app.use('/api/version', versionRoute);
-app.use('/api/file', laporanRoute )
-app.use(async(req, res, next)=>{
+app.use('/api/file', laporanRoute)
+app.use(async (req, res, next) => {
     next(createError.NotFound())
 })
-app.use((err, req, res, next)=>{
+app.use((err, req, res, next) => {
     res.status(err.status || 500)
     res.send({
-        error:{
+        error: {
             status: err.status || 500,
-            message : err.message
+            message: err.message
         }
     })
 })
-app.listen(PORT, ()=>{
+app.listen(PORT, () => {
     console.log(`Success runing on Port ${PORT}`)
 })

@@ -366,8 +366,8 @@ const deleteUsers = async (req, res) => {
 const profileUsers = async (req, res) => {
   const { idUser } = req.params;
   try {
-    // Ambil data profil pengguna
-    const [data] = await usersModel.profileUsers(idUser);
+    const [rows] = await usersModel.profileUsers(idUser);
+    const data = rows[0];
     const idPotongan = 2;
 
     if (!data) {
@@ -378,23 +378,10 @@ const profileUsers = async (req, res) => {
       });
     }
 
-    // Query tambahan untuk estimasi fee
     const getPotonganMangkir = await usersModel.getPotonganMangkir(idPotongan);
-    const PotonganMangkir = getPotonganMangkir.value;
-    const [feeData] = await usersModel.getFeePerUser(idUser, PotonganMangkir);
-    console.log("Fee Data (Full):", JSON.stringify(feeData, null, 2)); // Debugging
-
-    // Tangani feeData yang kosong
-
-    const estimasiGaji = feeData.total_gaji_akhir;
-
-    console.log("Estimasi Gaji:", estimasiGaji); // Debugging
-
-    // Tambahkan estimasi fee ke dalam data profil
-    const enrichedData = {
-      ...data,
-      estimasi_gaji: feeData,
-    };
+    const PotonganMangkir = getPotonganMangkir?.value || 0;
+    const [feeRows] = await usersModel.getFeePerUser(idUser, PotonganMangkir);
+    const feeData = feeRows?.[0] || null;
 
     res.json({
       message: "Get User Profiles Success",
@@ -417,8 +404,8 @@ const profileUsers = async (req, res) => {
 const profileUsersWeb = async (req, res) => {
   const { idUser } = req.params;
   try {
-    // Ambil data profil pengguna
-    const [data] = await usersModel.profileUsersWeb(idUser);
+    const [rows] = await usersModel.profileUsersWeb(idUser);
+    const data = rows[0];
 
     if (!data) {
       return res.status(404).json({
