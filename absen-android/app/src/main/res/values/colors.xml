@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="primaryColor">#FF5722</color>
+    <color name="primaryDarkColor">#3700B3</color> <!-- Warna lebih gelap -->
+    <color name="accentColor">#03DAC5</color> <!-- Warna aksen -->
+    <color name="white">#FFFFFF</color> <!-- Warna putih -->
+    <color name="palePink">#FFF4F4</color>
+    <color name="darkGray">#666666</color>
+    <color name="lightGray">#F5F5F5</color>
+    <color name="gray">#888888</color>
+    <color name="success">#4CAF50</color>
+    <color name="blue">#2196F3</color>
+    <color name="red">#bf1029</color>
+    <color name="green">#3f8f29</color>
+    <color name="overlayBackground">#80000000</color>
+    <color name="pinkBackground">#fef7ff</color>
+    <color name="grey_300">#E0E0E0</color>
+</resources>

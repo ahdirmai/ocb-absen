@@ -1,0 +1,14 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Base.Theme.AbsensiApps" parent="Theme.Material3.Light.NoActionBar">
+        <item name="android:fontFamily">@font/poppins_regular</item>
+
+    </style>
+
+    <style name="Theme.AbsensiApps" parent="Base.Theme.AbsensiApps" />
+    <style name="ProgressBarTheme" parent="Widget.AppCompat.ProgressBar">
+        <item name="android:indeterminateTint">@color/primaryColor</item>
+        <item name="android:indeterminateTintMode">src_in</item>
+        <item name="android:fontFamily">@font/poppins_regular</item>
+    </style>
+</resources>

@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">OCB Absen</string>
+    <string name="company_logo">Oscar Cellular Banjarmasin Logo</string>
+    <string-array name="kategori_absen_array">
+        <item>Semua</item>
+        <item>Pagi</item>
+        <item>Sore</item>
+        <item>Malam</item>
+    </string-array>
+</resources>

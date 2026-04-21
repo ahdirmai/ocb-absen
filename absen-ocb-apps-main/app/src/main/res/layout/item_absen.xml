@@ -1,0 +1,60 @@
+<androidx.cardview.widget.CardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    app:cardCornerRadius="16dp"
+    app:cardElevation="12dp"
+    android:padding="16dp"
+    android:background="@color/white"
+    android:layout_marginHorizontal="14dp"
+    android:layout_marginVertical="8dp"
+    android:foreground="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true">
+
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="12dp">
+
+    <ImageView
+        android:id="@+id/iconImageView"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:src="@drawable/green_in"
+        android:layout_gravity="center_vertical"
+        android:layout_marginEnd="12dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/jenisAbsenTextView"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Absen Masuk"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="@color/black" />
+
+        <TextView
+            android:id="@+id/namaRetailTextView"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="retail"
+            android:textSize="12sp"
+            android:textColor="@color/darkGray" />
+        <TextView
+            android:id="@+id/tanggalAbsenTextView"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="18 Nov 2024"
+            android:textSize="14sp"
+            android:textColor="@color/darkGray" />
+    </LinearLayout>
+</LinearLayout>
+</androidx.cardview.widget.CardView>

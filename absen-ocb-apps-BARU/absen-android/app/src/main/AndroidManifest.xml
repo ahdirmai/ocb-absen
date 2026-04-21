@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="true" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <uses-feature android:name="android.hardware.camera.front" android:required="false"/>
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.AbsensiApps"
+        android:forceDarkAllowed="false"
+        tools:targetApi="31"
+        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config">
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyDunf3-HCBXaqxjZde2NMv1OejDjN6_ud4" />
+        <activity
+            android:name=".SplashScreenActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.ocbabsensiapps.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+        <activity android:name=".LoginActivity"></activity>
+        <activity android:name=".MainActivity"></activity>
+        <activity android:name=".LandingPageActivity"></activity>
+        <activity android:name=".AbsensiActivity"></activity>
+        <activity android:name=".AbsenActivity"></activity>
+        <activity android:name=".StatusAbsenActivity"></activity>
+        <activity android:name=".HistoryAbsenActivity"></activity>
+        <activity android:name=".ProfileActivity"></activity>
+        <activity android:name=".ApprovalActivity"></activity>
+        <activity android:name=".ApprovalDetailActivity"></activity>
+        <activity android:name=".ListKaryawanActivity"></activity>
+        <activity android:name=".HistoryAbsenBawahanActivity"></activity>
+        <activity android:name=".ValidationActivity"></activity>
+        <activity android:name=".TampilanMediaActivity"></activity>
+    </application>
+
+</manifest>

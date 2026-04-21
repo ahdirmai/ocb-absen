@@ -1,0 +1,55 @@
+<androidx.cardview.widget.CardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    app:cardCornerRadius="16dp"
+    app:cardElevation="12dp"
+    android:padding="16dp"
+    android:background="@color/white"
+    android:layout_marginHorizontal="14dp"
+    android:layout_marginVertical="8dp"
+    android:foreground="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true">
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="8dp">
+
+    <!-- Foto Karyawan -->
+    <ImageView
+        android:id="@+id/ivFoto"
+        android:layout_width="64dp"
+        android:layout_height="64dp"
+        android:layout_marginEnd="8dp"
+        android:scaleType="centerCrop"
+        android:src="@drawable/ic_launcher_foreground" />
+
+    <!-- Detail Karyawan -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- Nama Karyawan -->
+        <TextView
+            android:id="@+id/tvName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Nama Karyawan"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <!-- Jabatan Karyawan -->
+        <TextView
+            android:id="@+id/tvJabatan"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Jabatan Karyawan"
+            android:textSize="14sp"
+            android:textColor="#666666" />
+    </LinearLayout>
+</LinearLayout>
+</androidx.cardview.widget.CardView>
