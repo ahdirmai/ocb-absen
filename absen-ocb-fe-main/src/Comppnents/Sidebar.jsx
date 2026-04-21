@@ -16,7 +16,7 @@ const Sidebar = ({ isSidebarOpen }) => {
       const userProfile = sessionStorage.getItem("userProfile");
       if (userProfile) {
         const userData = JSON.parse(userProfile);
-        setName(userData[0]);
+        setName(Array.isArray(userData) ? userData[0] : userData);
       }
     };
 

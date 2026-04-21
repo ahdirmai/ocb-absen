@@ -17,7 +17,7 @@ const Header = ({toggleSidebar}) => {
      
       if (userProfile) {
         const userData = JSON.parse(userProfile); // Parse JSON
-        setName(userData[0]);// Ambil nama dari data
+        setName(Array.isArray(userData) ? userData[0] : userData);// Ambil nama dari data
       }
 
       
