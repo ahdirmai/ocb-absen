@@ -25,7 +25,6 @@ import com.android.volley.toolbox.Volley;
 import com.bumptech.glide.Glide;
 import com.google.android.material.button.MaterialButton;
 
-import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -146,22 +145,13 @@ public class MainActivity extends AppCompatActivity {
                 response -> {
                     Log.d("ProfileResponse", response.toString());
                     try {
-                        // Parsing data profil dari respons API
-                        JSONArray dataArray = response.getJSONArray("data");
+                        JSONObject data = ApiResponseParser.getObjectOrFirstArrayItem(response, "data");
+                        if (data != null) {
+                            String name = ApiResponseParser.optString(data, "name", "nama_karyawan", "username");
+                            String role = ApiResponseParser.optString(data, "role", "category_user", "name_role");
+                            id_category = ApiResponseParser.optString(data, "role_id", "id_category");
+                            String photoUrl = ApiResponseParser.optString(data, "photo_url", "foto_url", "image");
 
-                        // Pastikan array tidak kosong
-                        if (dataArray.length() > 0) {
-                            JSONObject data = dataArray.getJSONObject(0); // Ambil elemen pertama
-
-                            // Ambil detail user
-                            String name = data.getString("name");
-                            String role = data.getString("role");
-                            id_category = data.getString("role_id");
-                            String photoUrl = data.getString("photo_url");
-                            if (photoUrl != null) {
-                                photoUrl = photoUrl.trim().replaceAll("\\s+", ""); // Membersihkan URL
-                                Log.d("CleanedPhotoURL", "Cleaned URL: " + photoUrl);
-                            }
                             TextView nameTextView = findViewById(R.id.nameTextView);
                             TextView jobTitleTextView = findViewById(R.id.jobTitleTextView);
                             TextView greeting = findViewById(R.id.mainGreeting);
@@ -170,16 +160,14 @@ public class MainActivity extends AppCompatActivity {
                             Log.d("id_category", id_category);
 
                             menuAdapter.notifyDataSetChanged();
-                            greeting.setText("Halo, " + name );
+                            greeting.setText("Halo, " + name);
                             nameTextView.setText(name);
                             jobTitleTextView.setText(role);
                             Glide.with(this)
-                                    .load(Constant.IMAGE+ photoUrl)
+                                    .load(ApiResponseParser.buildImageUrl(photoUrl))
                                     .override(48, 48)
                                     .error(R.drawable.ic_warning)
                                     .into(profileImageView);
-                            // Update UI dengan data profile
-//                            Toast.makeText(this, "Profile: " + name + " (" + role + ")", Toast.LENGTH_SHORT).show();
                         }
 
                         // Update UI (Header)
@@ -211,49 +199,26 @@ public class MainActivity extends AppCompatActivity {
                     Log.d("LoginResponse", response.toString()); // Log respons dari server
 
                     try {
-                        String ontime = response.getString("total_ontime");
-                        String late = response.getString("total_late");
+                        String ontime = response.optString("total_ontime", "0");
+                        String late = response.optString("total_late", "0");
 
                         textAbsenTepat.setText(ontime);
                         textAbsenTerlambat.setText(late);
-                        // Konfigurasi format tanggal dan waktu
-//                        SimpleDateFormat isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.getDefault());
-//                        isoFormat.setTimeZone(TimeZone.getDefault());
-//
-//                        SimpleDateFormat wibFormat = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
-//                        wibFormat.setTimeZone(TimeZone.getDefault());
-//
-//                        SimpleDateFormat dateFormat = new SimpleDateFormat("dd MMM yyyy", Locale.getDefault());
-                        DateTimeFormatter isoFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSX")
-                                .withZone(ZoneId.of("UTC"));
-
-                        DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss");
-                        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy");
-
-                        ZoneId deviceZone = ZoneId.systemDefault();
-                        // Mendapatkan data array dari respons
-                        JSONArray jsonArray = response.getJSONArray("data");
+                        riwayatList.clear();
+                        JSONArray jsonArray = ApiResponseParser.getArray(response, "data");
                         for (int i = 0; i < jsonArray.length(); i++) {
                             JSONObject item = jsonArray.getJSONObject(i);
 
-                            // Ambil informasi dari setiap item
-                            String id = item.getString("absensi_id");
-                            String status = item.getString("description");
-                            String jam = item.getString("absen_time");
-                            String category = item.getString("status");
-                            String photoUrl = item.getString("photo_url");
-                            String nama = item.getString("nama_karyawan");
-                            String statusApproval = item.getString("status_approval");
+                            String id = ApiResponseParser.optString(item, "absensi_id", "absen_id", "id");
+                            String status = ApiResponseParser.optString(item, "description", "category_absen", "status");
+                            String jam = ApiResponseParser.optString(item, "absen_time", "created_at");
+                            String category = ApiResponseParser.optString(item, "status", "status_absen");
+                            String photoUrl = ApiResponseParser.optString(item, "photo_url", "foto_url", "image");
+                            String nama = ApiResponseParser.optString(item, "nama_karyawan", "name", "username");
+                            String statusApproval = ApiResponseParser.optString(item, "status_approval", "approval_status", "is_valid");
 
-                            String formattedDate = "";
-                            String formattedTime = "";
-
-                            // Parsing tanggal dan waktu dari format ISO 8601
-                            ZonedDateTime dateTime = ZonedDateTime.parse(jam, isoFormatter);
-
-                            // Konversi ke zona waktu perangkat
-                            formattedTime = dateTime.withZoneSameInstant(deviceZone).format(timeFormatter);
-                            formattedDate = dateTime.withZoneSameInstant(deviceZone).format(dateFormatter);
+                            String formattedDate = ApiResponseParser.formatDateTime(jam, "dd MMM yyyy");
+                            String formattedTime = ApiResponseParser.formatDateTime(jam, "HH:mm:ss");
 
                             // Menambahkan item ke daftar riwayat
                             riwayatList.add(new RiwayatAbsen(id, status, formattedDate, formattedTime, category, photoUrl, nama, statusApproval));
@@ -290,7 +255,7 @@ public class MainActivity extends AppCompatActivity {
                 // Parsing response error JSON
                 String responseBody = new String(error.networkResponse.data, "utf-8");
                 JSONObject data = new JSONObject(responseBody);
-                String message = data.getString("message");
+                String message = data.optString("message", "Session telah habis");
 
                 // Clear saved token
                 SharedPreferences sharedPreferences = getSharedPreferences("AppPrefs", MODE_PRIVATE);

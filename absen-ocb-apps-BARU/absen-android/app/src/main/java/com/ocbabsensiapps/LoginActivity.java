@@ -116,8 +116,8 @@ public class LoginActivity extends AppCompatActivity {
                         // Cek status
                         String status = response.optString("status");
                         if ("success".equals(status)) {
-                            String token = response.getString("token");
-                            String userId = response.getString("user_id");
+                            String token = response.optString("token");
+                            String userId = response.optString("user_id");
 
                             // Simpan token di SharedPreferences
                             SharedPreferences sharedPreferences = getSharedPreferences("AppPrefs", MODE_PRIVATE);
@@ -136,7 +136,7 @@ public class LoginActivity extends AppCompatActivity {
                             // Tampilkan pesan gagal dari API
                             Toast.makeText(LoginActivity.this, message, Toast.LENGTH_LONG).show();
                         }
-                    } catch (JSONException e) {
+                    } catch (Exception e) {
                         e.printStackTrace();
                         Toast.makeText(LoginActivity.this, "Terjadi kesalahan saat memproses data.", Toast.LENGTH_SHORT).show();
                     }

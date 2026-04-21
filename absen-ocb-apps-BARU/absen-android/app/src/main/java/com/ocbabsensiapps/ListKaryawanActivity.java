@@ -94,9 +94,9 @@ public class ListKaryawanActivity extends AppCompatActivity {
                     progressBar.setVisibility(View.GONE);
                     try {
                         Log.d("under-upline", response.toString());
-                        String status = response.getString("status");
+                        String status = response.optString("status");
                         if (status.equalsIgnoreCase("success")) {
-                            JSONArray dataArray = response.getJSONArray("data");
+                            JSONArray dataArray = ApiResponseParser.getArray(response, "data");
                             if (dataArray.length() > 0) {
                                 allKaryawanList.clear(); // Bersihkan list semua karyawan sebelum menambahkan data baru
                                 karyawanList.clear(); // Bersihkan list yang ditampilkan
@@ -104,15 +104,10 @@ public class ListKaryawanActivity extends AppCompatActivity {
                                     JSONObject obj = dataArray.getJSONObject(i);
 
                                     // Ambil data karyawan dari respons
-                                    String id = obj.getString("user_id");
-                                    String name = obj.getString("name");
-                                    String jabatan = obj.getString("category_user");
-                                    String fotoUrl = obj.isNull("photo_url") ? null : obj.getString("photo_url"); // Pastikan foto tidak null
-
-                                    if (fotoUrl != null) {
-                                        fotoUrl = fotoUrl.trim().replaceAll("\\s+", ""); // Membersihkan URL
-                                        Log.d("CleanedPhotoURL", "Cleaned URL: " + fotoUrl);
-                                    }
+                                    String id = ApiResponseParser.optString(obj, "user_id", "id_user", "id");
+                                    String name = ApiResponseParser.optString(obj, "name", "nama_karyawan", "username");
+                                    String jabatan = ApiResponseParser.optString(obj, "category_user", "role", "name_role");
+                                    String fotoUrl = ApiResponseParser.optString(obj, "photo_url", "foto_url", "image");
                                     // Tambahkan ke list semua karyawan dan list yang ditampilkan awal
                                     Karyawan karyawan = new Karyawan(id, name, jabatan, fotoUrl);
                                     allKaryawanList.add(karyawan);
@@ -140,7 +135,7 @@ public class ListKaryawanActivity extends AppCompatActivity {
                         try {
                             String responseBody = new String(error.networkResponse.data, "UTF-8");
                             JSONObject errorObject = new JSONObject(responseBody);
-                            String message = errorObject.getString("message");
+                            String message = errorObject.optString("message", "Session telah habis");
 
                             // Hapus token dan kembali ke login
                             SharedPreferences.Editor editor = sharedPreferences.edit();

@@ -25,9 +25,6 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -82,37 +79,28 @@ public class ApprovalActivity extends AppCompatActivity {
         String token = sharedPreferences.getString("authToken", "");
         String userId = sharedPreferences.getString("userId", "");
         String apiUrl = Constant.API + "absensi/approval/" +userId;
-        DateTimeFormatter isoFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSX")
-                .withZone(ZoneId.of("UTC"));
-
-        DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss");
-        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy HH:mm:ss");
-
-        ZoneId deviceZone = ZoneId.systemDefault();
 
         JsonObjectRequest jsonObjectRequest = new JsonObjectRequest(Request.Method.POST, apiUrl, null,
                 response -> {
                     progressBar.setVisibility(View.GONE);
                     try {
                         Log.d("APIResponse", response.toString());
-                        JSONArray absenArray = response.getJSONArray("data");
+                        JSONArray absenArray = ApiResponseParser.getArray(response, "data");
                         allApprovalList.clear(); // Bersihkan list semua approval sebelum menambahkan data baru
                         approvalList.clear(); // Bersihkan list yang ditampilkan
 
                         for (int i = 0; i < absenArray.length(); i++) {
                             JSONObject absenObject = absenArray.getJSONObject(i);
-                            String absensi_id = absenObject.getString("absensi_id");
-                            String nama_karyawan = absenObject.getString("nama_karyawan");
-                            String absen_time = absenObject.getString("absen_time");
-                            String description = absenObject.getString("description");
-                            String status_approval = absenObject.getString("status_approval");
-                            String retail_name = absenObject.getString("retail_name");
-                            String reason = absenObject.getString("reason");
-                            String photoUrl = absenObject.getString("photo_url");
+                            String absensi_id = ApiResponseParser.optString(absenObject, "absensi_id", "absen_id", "id");
+                            String nama_karyawan = ApiResponseParser.optString(absenObject, "nama_karyawan", "name", "username");
+                            String absen_time = ApiResponseParser.optString(absenObject, "absen_time", "created_at");
+                            String description = ApiResponseParser.optString(absenObject, "description", "category_absen", "status");
+                            String status_approval = ApiResponseParser.optString(absenObject, "status_approval", "approval_status", "is_valid");
+                            String retail_name = ApiResponseParser.optString(absenObject, "retail_name", "location_name", "retail");
+                            String reason = ApiResponseParser.optString(absenObject, "reason", "notes");
+                            String photoUrl = ApiResponseParser.optString(absenObject, "photo_url", "foto_url", "image");
 
-                            String formattedDate = "";
-                            ZonedDateTime dateTime = ZonedDateTime.parse(absen_time, isoFormatter);
-                            formattedDate = dateTime.withZoneSameInstant(deviceZone).format(dateFormatter);
+                            String formattedDate = ApiResponseParser.formatDateTime(absen_time, "dd MMM yyyy HH:mm:ss");
 
                             // Tambahkan item approval ke list semua data dan list tampilan awal
                             ApprovalItem approvalItem = new ApprovalItem(
@@ -159,7 +147,7 @@ public class ApprovalActivity extends AppCompatActivity {
         } else {
             String searchText = text.toLowerCase(Locale.getDefault());
             for (ApprovalItem approval : allApprovalList) {
-                if (approval.getNama_karyawan().toLowerCase(Locale.getDefault()).contains(searchText)) {
+                if (approval.getNama_karyawan() != null && approval.getNama_karyawan().toLowerCase(Locale.getDefault()).contains(searchText)) {
                     approvalList.add(approval); // Tambahkan approval yang nama karyawannya sesuai dengan teks pencarian
                 }
             }
@@ -173,7 +161,7 @@ public class ApprovalActivity extends AppCompatActivity {
                 // Parsing response error JSON
                 String responseBody = new String(error.networkResponse.data, "utf-8");
                 JSONObject data = new JSONObject(responseBody);
-                String message = data.getString("message");
+                String message = data.optString("message", "Session telah habis");
 
                 // Clear saved token
                 SharedPreferences sharedPreferences = getSharedPreferences("AppPrefs", MODE_PRIVATE);

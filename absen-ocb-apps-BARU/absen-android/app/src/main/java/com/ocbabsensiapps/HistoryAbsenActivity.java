@@ -21,19 +21,13 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.TimeZone;
-
 public class HistoryAbsenActivity extends AppCompatActivity {
 
     private RecyclerView recyclerView;
@@ -69,42 +63,21 @@ public class HistoryAbsenActivity extends AppCompatActivity {
                     Log.d("LoginResponse", response.toString()); // Log respons dari server
 
                     try {
-//                        int ontime = response.getInt("ontime");
-//                        int late = response.getInt("late");
-//
-//                        ontimeTextView.setText(String.valueOf(ontime));
-//                        lateTextView.setText(String.valueOf(late));
-                        // Konfigurasi format tanggal dan waktu
-                        DateTimeFormatter isoFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSX")
-                                .withZone(ZoneId.of("UTC"));
-
-                        DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss");
-                        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy");
-
-                        ZoneId deviceZone = ZoneId.systemDefault();
-
-                        // Mendapatkan data array dari respons
-                        JSONArray jsonArray = response.getJSONArray("data");
+                        riwayatList.clear();
+                        JSONArray jsonArray = ApiResponseParser.getArray(response, "data");
                         for (int i = 0; i < jsonArray.length(); i++) {
                             JSONObject item = jsonArray.getJSONObject(i);
 
-                            // Ambil informasi dari setiap item
-                            String id = item.getString("absensi_id");
-                            String status = item.getString("description");
-                            String jam = item.getString("absen_time");
-                            String category = item.getString("status");
-                            String photoUrl = item.getString("photo_url");
-                            String nama = item.getString("nama_karyawan");
-                            String statusApproval = item.getString("status_approval");
+                            String id = ApiResponseParser.optString(item, "absensi_id", "absen_id", "id");
+                            String status = ApiResponseParser.optString(item, "description", "category_absen", "status");
+                            String jam = ApiResponseParser.optString(item, "absen_time", "created_at");
+                            String category = ApiResponseParser.optString(item, "status", "status_absen");
+                            String photoUrl = ApiResponseParser.optString(item, "photo_url", "foto_url", "image");
+                            String nama = ApiResponseParser.optString(item, "nama_karyawan", "name", "username");
+                            String statusApproval = ApiResponseParser.optString(item, "status_approval", "approval_status", "is_valid");
 
-                            String formattedDate = "";
-                            String formattedTime = "";
-
-                            ZonedDateTime dateTime = ZonedDateTime.parse(jam, isoFormatter);
-
-                            // Konversi ke zona waktu perangkat
-                            formattedTime = dateTime.withZoneSameInstant(deviceZone).format(timeFormatter);
-                            formattedDate = dateTime.withZoneSameInstant(deviceZone).format(dateFormatter);
+                            String formattedDate = ApiResponseParser.formatDateTime(jam, "dd MMM yyyy");
+                            String formattedTime = ApiResponseParser.formatDateTime(jam, "HH:mm:ss");
 
                             // Menambahkan item ke daftar riwayat
                             riwayatList.add(new RiwayatAbsen(id, status, formattedDate, formattedTime, category, photoUrl, nama, statusApproval));
@@ -141,7 +114,7 @@ public class HistoryAbsenActivity extends AppCompatActivity {
                 // Parsing response error JSON
                 String responseBody = new String(error.networkResponse.data, "utf-8");
                 JSONObject data = new JSONObject(responseBody);
-                String message = data.getString("message");
+                String message = data.optString("message", "Session telah habis");
 
                 // Clear saved token
                 SharedPreferences sharedPreferences = getSharedPreferences("AppPrefs", MODE_PRIVATE);

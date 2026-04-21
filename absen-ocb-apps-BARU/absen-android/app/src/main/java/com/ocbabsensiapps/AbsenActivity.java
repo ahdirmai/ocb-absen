@@ -569,15 +569,15 @@ public class AbsenActivity extends AppCompatActivity {
                     buttonSubmitAbsen.setEnabled(true);
                     try {
                         JSONObject jsonResponse = new JSONObject(new String(response.data));
-                        String status = jsonResponse.getString("message");
-                        if (status != null) {
+                        String status = jsonResponse.optString("status");
+                        String message = jsonResponse.optString("message", "Absen berhasil terkirim");
+                        if ("success".equalsIgnoreCase(status)) {
                             Intent intent = new Intent(AbsenActivity.this, StatusAbsenActivity.class);
                             intent.putExtra("infoStatus", "absen");
                             startActivity(intent);
                             finish();
-                            Snackbar.make(findViewById(android.R.id.content), "Absen berhasil terkirim", Snackbar.LENGTH_SHORT).show();
+                            Snackbar.make(findViewById(android.R.id.content), message, Snackbar.LENGTH_SHORT).show();
                         } else {
-                            String message = jsonResponse.getString("message");
                             Toast.makeText(AbsenActivity.this, "Gagal absen: " + message, Toast.LENGTH_SHORT).show();
                         }
                     } catch (JSONException e) {
@@ -611,7 +611,7 @@ public class AbsenActivity extends AppCompatActivity {
             try {
                 String responseBody = new String(error.networkResponse.data, "utf-8");
                 JSONObject data = new JSONObject(responseBody);
-                String message = data.getString("message");
+                String message = data.optString("message", "Session telah habis");
 
                 SharedPreferences sharedPreferences = getSharedPreferences("AppPrefs", MODE_PRIVATE);
                 SharedPreferences.Editor editor = sharedPreferences.edit();
@@ -633,7 +633,7 @@ public class AbsenActivity extends AppCompatActivity {
             try {
                 responseBody = new String(error.networkResponse.data, "UTF-8");
                 JSONObject data = new JSONObject(responseBody);
-                message = data.getString("message");
+                message = data.optString("message", "Terjadi kesalahan pada server");
             } catch (Exception e) {
                 e.printStackTrace();
             }

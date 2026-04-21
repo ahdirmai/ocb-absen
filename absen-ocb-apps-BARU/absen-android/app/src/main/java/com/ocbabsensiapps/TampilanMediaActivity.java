@@ -43,7 +43,7 @@ public class TampilanMediaActivity extends AppCompatActivity {
 
         imageView.setVisibility(ImageView.VISIBLE); // Tampilkan ImageView
         Glide.with(this)
-                .load(Constant.IMAGE + imageUrl)
+                .load(ApiResponseParser.buildImageUrl(imageUrl))
                 .into(imageView);
     }
 
@@ -53,7 +53,7 @@ public class TampilanMediaActivity extends AppCompatActivity {
         imageView.setVisibility(ImageView.GONE); // Sembunyikan ImageView
 
         videoView.setVisibility(VideoView.VISIBLE); // Tampilkan VideoView
-        videoView.setVideoURI(Uri.parse(Constant.IMAGE + videoUrl));
+        videoView.setVideoURI(Uri.parse(ApiResponseParser.buildImageUrl(videoUrl)));
         MediaController mediaController = new MediaController(this);
         videoView.setMediaController(mediaController);
         mediaController.setAnchorView(videoView); // Penting untuk menempelkan controller ke VideoView

@@ -23,7 +23,6 @@ import com.android.volley.toolbox.Volley;
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.request.RequestOptions;
 
-import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.w3c.dom.Text;
@@ -54,29 +53,18 @@ public class ProfileActivity extends AppCompatActivity {
                 response -> {
                     Log.d("ProfileResponse", response.toString());
                     try {
-                        // Parsing data profil dari respons API
-                        JSONArray dataArray = response.getJSONArray("data");
-                        JSONArray dataArrayFee = response.getJSONArray("fee");
+                        JSONObject data = ApiResponseParser.getObjectOrFirstArrayItem(response, "data");
+                        JSONObject dataFee = ApiResponseParser.getObjectOrFirstArrayItem(response, "fee");
 
-                        // Pastikan array tidak kosong
-                        if (dataArray.length() > 0) {
-                            JSONObject data = dataArray.getJSONObject(0); // Ambil elemen pertama
-                            JSONObject dataFee = dataArrayFee.getJSONObject(0); // Ambil elemen pertama
-
-                            // Ambil detail user
-                            String name = data.getString("name");
-                            String role = data.getString("role");
-                            String category_user = data.getString("category_user");
-                            String upline = data.getString("upline");
-                            String photoUrl = data.getString("photo_url");
-                            String retailName = data.getString("retail_name");
-                            if (photoUrl != null) {
-                                photoUrl = photoUrl.trim().replaceAll("\\s+", ""); // Membersihkan URL
-                                Log.d("CleanedPhotoURL", "Cleaned URL: " + photoUrl);
-                            }
-                            String periodeFee = dataFee.getString("period");
-                            String totalFee = dataFee.getString("total_gaji_akhir");
-
+                        if (data != null) {
+                            String name = ApiResponseParser.optString(data, "name", "nama_karyawan", "username");
+                            String role = ApiResponseParser.optString(data, "role", "category_user", "name_role");
+                            String categoryUser = ApiResponseParser.optString(data, "category_user", "role", "name_role");
+                            String upline = ApiResponseParser.optString(data, "upline", "nama_upline", "atasan");
+                            String photoUrl = ApiResponseParser.optString(data, "photo_url", "foto_url", "image");
+                            String retailName = ApiResponseParser.optString(data, "retail_name", "location_name", "retail");
+                            String periodeFee = ApiResponseParser.optString(dataFee, "period", "periode");
+                            String totalFee = ApiResponseParser.optString(dataFee, "total_gaji_akhir", "total_fee", "nominal");
 
                             TextView nameText = findViewById(R.id.nameText);
                             TextView jobText = findViewById(R.id.jobText);
@@ -90,19 +78,20 @@ public class ProfileActivity extends AppCompatActivity {
                             TextView versionAppText = findViewById(R.id.versionAppText);
 
                             nameText.setText("Nama: " + name);
-                            jobText.setText("Jabatan: " + category_user);
+                            jobText.setText("Jabatan: " + categoryUser);
                             employeeIdText.setText("Atasan: " + upline);
                             locationShiftText.setText("Lokasi Shift: " + retailName);
                             nameBigText.setText(name);
                             jobBigText.setText(role);
                             Glide.with(this)
-                                    .load(Constant.IMAGE+ photoUrl)
+                                    .load(ApiResponseParser.buildImageUrl(photoUrl))
                                     .override(128, 128)
                                     .apply(RequestOptions.circleCropTransform())
                                     .error(R.drawable.ic_warning)
                                     .into(profileImageView);
-                            double value = Double.parseDouble(totalFee);
+
                             NumberFormat formatter = NumberFormat.getCurrencyInstance(new Locale("id", "ID"));
+                            double value = totalFee.isEmpty() ? 0 : Double.parseDouble(totalFee);
                             periodeFeeText.setText("Periode: " + periodeFee);
                             totalFeeText.setText("Gaji Bulan Ini: " + formatter.format(value));
                             String versionName = getVersionName(this);
@@ -134,7 +123,7 @@ public class ProfileActivity extends AppCompatActivity {
                 // Parsing response error JSON
                 String responseBody = new String(error.networkResponse.data, "utf-8");
                 JSONObject data = new JSONObject(responseBody);
-                String message = data.getString("message");
+                String message = data.optString("message", "Session telah habis");
 
                 // Clear saved token
                 SharedPreferences sharedPreferences = getSharedPreferences("AppPrefs", MODE_PRIVATE);

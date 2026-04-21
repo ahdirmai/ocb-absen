@@ -109,24 +109,24 @@ public class AbsensiActivity extends AppCompatActivity {
                 response -> {
                     try {
                         Log.d("APIResponse", response.toString());
-                        JSONArray absenArray = response.getJSONArray("data");
+                        JSONArray absenArray = ApiResponseParser.getArray(response, "data");
                         allAbsenList.clear(); // Bersihkan list semua data
                         absenList.clear(); // Bersihkan list yang ditampilkan
 
                         for (int i = 0; i < absenArray.length(); i++) {
                             JSONObject absenObject = absenArray.getJSONObject(i);
-                            String absen_id = absenObject.getString("absen_id");
-                            String name = absenObject.getString("name");
-                            String description = absenObject.getString("description");
-                            String retail_id = absenObject.getString("retail_id");
-                            String latitude = absenObject.getString("latitude");
-                            String longitude = absenObject.getString("longitude");
-                            String radius = absenObject.getString("radius");
-                            String start_time = absenObject.getString("start_time");
-                            String end_time = absenObject.getString("end_time");
-                            String retail_name = absenObject.getString("retail_name");
-                            String is_absen_today = absenObject.getString("is_absen_today");
-                            String kategori_absen = absenObject.getString("kategori_absen"); // Ambil kategori absen
+                            String absen_id = ApiResponseParser.optString(absenObject, "absen_id", "absensi_id", "id");
+                            String name = ApiResponseParser.optString(absenObject, "name", "nama_karyawan", "username");
+                            String description = ApiResponseParser.optString(absenObject, "description", "category_absen", "status");
+                            String retail_id = ApiResponseParser.optString(absenObject, "retail_id", "id_retail");
+                            String latitude = ApiResponseParser.optString(absenObject, "latitude", "lat");
+                            String longitude = ApiResponseParser.optString(absenObject, "longitude", "lng");
+                            String radius = ApiResponseParser.optString(absenObject, "radius", "distance");
+                            String start_time = ApiResponseParser.optString(absenObject, "start_time", "jam_masuk");
+                            String end_time = ApiResponseParser.optString(absenObject, "end_time", "jam_pulang");
+                            String retail_name = ApiResponseParser.optString(absenObject, "retail_name", "location_name", "retail");
+                            String is_absen_today = ApiResponseParser.optString(absenObject, "is_absen_today", "already_absen", "is_today");
+                            String kategori_absen = ApiResponseParser.optString(absenObject, "kategori_absen", "category_absen", "category");
 
                             // Tambahkan item absen ke list semua data
                             allAbsenList.add(new AbsenItem(
@@ -205,7 +205,7 @@ public class AbsensiActivity extends AppCompatActivity {
                 // Parsing response error JSON
                 String responseBody = new String(error.networkResponse.data, "utf-8");
                 JSONObject data = new JSONObject(responseBody);
-                String message = data.getString("message");
+                String message = data.optString("message", "Session telah habis");
 
                 // Clear saved token
                 SharedPreferences sharedPreferences = getSharedPreferences("AppPrefs", MODE_PRIVATE);

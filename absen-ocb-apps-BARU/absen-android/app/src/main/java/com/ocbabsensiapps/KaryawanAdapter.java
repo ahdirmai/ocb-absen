@@ -42,7 +42,7 @@ public class KaryawanAdapter extends RecyclerView.Adapter<KaryawanAdapter.Karyaw
 
         // Muat foto menggunakan Glide
         Glide.with(holder.itemView.getContext())
-                .load(Constant.IMAGE+karyawan.getFotoUrl())
+                .load(ApiResponseParser.buildImageUrl(karyawan.getFotoUrl()))
                 .placeholder(R.drawable.ic_launcher_foreground) // Placeholder gambar
                 .error(R.drawable.ic_warning) // Jika gagal memuat gambar
                 .into(holder.ivFoto);
