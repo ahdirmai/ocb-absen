@@ -1,14 +1,6 @@
+
+
 import { Navigate } from "react-router-dom";
-
-const ALLOWED_DASHBOARD_ROLES = ["admin", "hrd", "owner"];
-
-const getNormalizedRole = (userProfile) => {
-  const normalizedProfile = Array.isArray(userProfile)
-    ? userProfile[0]
-    : userProfile;
-
-  return String(normalizedProfile?.role || "").trim().toLowerCase();
-};
 
 // eslint-disable-next-line react/prop-types
 const ProtectedRoute = ({ children }) => {
@@ -16,27 +8,11 @@ const ProtectedRoute = ({ children }) => {
   const userSession = sessionStorage.getItem("userProfile");
 
   if (!token || !userSession) {
+    // Hapus token dan session jika tidak valid
     localStorage.removeItem("token");
     sessionStorage.removeItem("userProfile");
 
-    return <Navigate to="/login" replace />;
-  }
-
-  try {
-    const parsedUserProfile = JSON.parse(userSession);
-    const normalizedRole = getNormalizedRole(parsedUserProfile);
-
-    if (!ALLOWED_DASHBOARD_ROLES.includes(normalizedRole)) {
-      localStorage.removeItem("token");
-      sessionStorage.removeItem("userProfile");
-
-      return <Navigate to="/login" replace />;
-    }
-  } catch (error) {
-    console.error("Invalid userProfile session:", error);
-    localStorage.removeItem("token");
-    sessionStorage.removeItem("userProfile");
-
+    // Redirect ke halaman login
     return <Navigate to="/login" replace />;
   }
 
