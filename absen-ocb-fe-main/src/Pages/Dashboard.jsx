@@ -21,7 +21,7 @@ const Dashboard = () => {
   const [dashboardData, setDashboardData] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [fee, setFee] = useState([]);
+  const [fee, setFee] = useState(0);
   const [chartData, setChartData] =  useState({
     labels: [],
     datasets:[],});
@@ -73,7 +73,10 @@ const Dashboard = () => {
             ],
           });
         } else {
-          console.error('Data tidak valid atau kosong:', fetchedData);
+          setChartData({
+            labels: [],
+            datasets: [],
+          });
         }
       } catch (error) {
         console.error('Terjadi kesalahan saat mengambil data:', error);
@@ -173,6 +176,11 @@ const Dashboard = () => {
 
   return (
     <div className="content-wrapper">
+      {error && (
+        <div className="alert alert-danger" role="alert">
+          {error}
+        </div>
+      )}
       <div className="page-header">
         <h3 className="page-title">
           <span className="page-title-icon bg-gradient-primary text-white me-2">
