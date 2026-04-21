@@ -1,5 +1,7 @@
 const absensiModel = require("../models/absensi.model");
 const dbpool = require("../config/database");
+const fs = require("fs");
+const path = require("path");
 
 function hitungJarak(lat1, lon1, lat2, lon2) {
   const R = 6371000;
@@ -18,34 +20,45 @@ function hitungJarak(lat1, lon1, lat2, lon2) {
 const isBlank = (value) =>
   value === undefined || value === null || String(value).trim() === "";
 
+const removeUploadedImage = (filename) => {
+  if (!filename) {
+    return;
+  }
+
+  const imagePath = path.resolve(__dirname, "../../public/images", filename);
+  fs.unlink(imagePath, (err) => {
+    if (err && err.code !== "ENOENT") {
+      console.error("Failed to delete file:", err);
+    }
+  });
+};
+
+const rejectValidation = (req, res, message) => {
+  removeUploadedImage(req.file?.filename);
+
+  return res.status(400).json({
+    message,
+    status: "failed",
+    status_code: "400",
+  });
+};
+
 const checkAbsensi = async (req, res, next) => {
   const { absen_type_id, user_id, retail_id, latitude, longitude } = req.body;
 
   if (isBlank(user_id) || isBlank(absen_type_id) || isBlank(retail_id)) {
-    return res.status(400).json({
-      message: "User, retail, dan tipe absen wajib diisi.",
-      status: "failed",
-      status_code: "400",
-    });
+    return rejectValidation(req, res, "User, retail, dan tipe absen wajib diisi.");
   }
 
   if (isBlank(latitude) || isBlank(longitude)) {
-    return res.status(400).json({
-      message: "Lokasi GPS wajib diaktifkan untuk absen!",
-      status: "failed",
-      status_code: "400",
-    });
+    return rejectValidation(req, res, "Lokasi GPS wajib diaktifkan untuk absen!");
   }
 
   const latitudeNumber = Number(latitude);
   const longitudeNumber = Number(longitude);
 
   if (Number.isNaN(latitudeNumber) || Number.isNaN(longitudeNumber)) {
-    return res.status(400).json({
-      message: "Format koordinat GPS tidak valid.",
-      status: "failed",
-      status_code: "400",
-    });
+    return rejectValidation(req, res, "Format koordinat GPS tidak valid.");
   }
 
   try {
@@ -55,11 +68,11 @@ const checkAbsensi = async (req, res, next) => {
     );
 
     if (cekAbsenToday) {
-      return res.status(400).json({
-        message: "Mohon Maaf Anda sudah Absen hari ini untuk tipe Absen ini",
-        status: "failed",
-        status_code: "400",
-      });
+      return rejectValidation(
+        req,
+        res,
+        "Mohon Maaf Anda sudah Absen hari ini untuk tipe Absen ini"
+      );
     }
 
     const [retailers] = await dbpool.query(
@@ -68,11 +81,7 @@ const checkAbsensi = async (req, res, next) => {
     );
 
     if (retailers.length === 0) {
-      return res.status(400).json({
-        message: "Retail untuk absensi tidak ditemukan.",
-        status: "failed",
-        status_code: "400",
-      });
+      return rejectValidation(req, res, "Retail untuk absensi tidak ditemukan.");
     }
 
     const retail = retailers[0];
@@ -90,13 +99,13 @@ const checkAbsensi = async (req, res, next) => {
       );
 
       if (jarak > Number(retail.radius)) {
-        return res.status(400).json({
-          message: `Anda berada di luar radius toko ${retail.name}. Jarak Anda: ${jarak.toFixed(
+        return rejectValidation(
+          req,
+          res,
+          `Anda berada di luar radius toko ${retail.name}. Jarak Anda: ${jarak.toFixed(
             0
-          )} meter, Radius maksimal: ${retail.radius} meter`,
-          status: "failed",
-          status_code: "400",
-        });
+          )} meter, Radius maksimal: ${retail.radius} meter`
+        );
       }
     }
 

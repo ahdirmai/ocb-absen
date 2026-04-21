@@ -7,7 +7,7 @@ const cekAbsenToday = require('../middleware/validasiAbsensi');
 const router = express.Router();
 
 //Lakukan Absensi
-router.post('/', authenticateToken, cekAbsenToday, upload.single('photo_url'), absensiController.createAbsensi );
+router.post('/', authenticateToken, upload.single('photo_url'), cekAbsenToday, absensiController.createAbsensi );
 //Get All Absensi
 // router.get('/history/', authenticateToken, );
 // //Get History Absensi Per User

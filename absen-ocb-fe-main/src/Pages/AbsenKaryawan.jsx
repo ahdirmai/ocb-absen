@@ -24,6 +24,7 @@ const AbsenKaryawan = () => {
   const [loginLoading, setLoginLoading] = useState(false);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const isRequestingLocationRef = useRef(false);
 
   const hasLocation = location.latitude !== null && location.longitude !== null;
 
@@ -70,16 +71,27 @@ const AbsenKaryawan = () => {
     return { token, userId };
   };
 
-  const requestLocation = () => {
+  const requestLocation = (options = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }) => {
+    if (isRequestingLocationRef.current) {
+      return;
+    }
+
     if (!navigator.geolocation) {
       setLocationError("Browser tidak support GPS.");
       return;
     }
 
+    if (!window.isSecureContext && window.location.hostname !== "localhost") {
+      setLocationError("Lokasi hanya bisa diakses di HTTPS atau localhost.");
+      return;
+    }
+
+    isRequestingLocationRef.current = true;
     setLocationError("Mengambil lokasi...");
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        isRequestingLocationRef.current = false;
         setLocation({
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
@@ -87,20 +99,35 @@ const AbsenKaryawan = () => {
         setLocationError("");
       },
       (error) => {
+        isRequestingLocationRef.current = false;
         console.error("Location error:", error);
         setLocation(initialLocation);
 
         let message = "Gagal ambil lokasi. Tap untuk coba lagi.";
 
         if (error.code === error.PERMISSION_DENIED) {
-          message = "Izin lokasi ditolak. Aktifkan GPS lalu coba lagi.";
+          message =
+            "Izin lokasi ditolak. Izinkan akses lokasi di browser lalu coba lagi.";
         } else if (error.code === error.TIMEOUT) {
-          message = "Pengambilan lokasi timeout. Coba lagi.";
+          message =
+            "Pengambilan lokasi timeout. Coba lagi di area dengan sinyal GPS lebih baik.";
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          if (options.enableHighAccuracy) {
+            requestLocation({
+              enableHighAccuracy: false,
+              timeout: 20000,
+              maximumAge: 60000,
+            });
+            return;
+          }
+
+          message =
+            "Lokasi belum tersedia. Pastikan GPS perangkat aktif lalu coba lagi.";
         }
 
         setLocationError(message);
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      options
     );
   };
 
@@ -241,7 +268,6 @@ const AbsenKaryawan = () => {
 
         setIsLoggedIn(true);
         await fetchProfile(token, userId);
-        requestLocation();
       } else {
         Swal.fire("Gagal", response.data.message || "Login gagal", "error");
       }
