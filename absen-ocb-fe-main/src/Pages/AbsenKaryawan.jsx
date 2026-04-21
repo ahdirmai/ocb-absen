@@ -6,6 +6,7 @@ import { jwtDecode } from "jwt-decode";
 const VITE_API_URL = import.meta.env.VITE_API_URL;
 
 const initialLocation = { latitude: null, longitude: null };
+const normalizeDescription = (value) => String(value || "").trim().toLowerCase();
 
 const AbsenKaryawan = () => {
   const [loading, setLoading] = useState(false);
@@ -28,12 +29,56 @@ const AbsenKaryawan = () => {
 
   const hasLocation = location.latitude !== null && location.longitude !== null;
 
+  const absenMasukTypes = useMemo(
+    () =>
+      absenTypes.filter(
+        (type) => normalizeDescription(type.description) === "absen masuk"
+      ),
+    [absenTypes]
+  );
+
+  const absenKeluarTypes = useMemo(
+    () =>
+      absenTypes.filter(
+        (type) => normalizeDescription(type.description) === "absen keluar"
+      ),
+    [absenTypes]
+  );
+
+  const hasCompletedAbsenMasuk = useMemo(
+    () => absenMasukTypes.some((type) => Number(type.is_absen_today) === 1),
+    [absenMasukTypes]
+  );
+
+  const hasAnyAttendanceToday = useMemo(
+    () => absenTypes.some((type) => Number(type.is_absen_today) === 1),
+    [absenTypes]
+  );
+
+  const displayedAbsenTypes = useMemo(() => {
+    if (!hasAnyAttendanceToday && absenMasukTypes.length > 0) {
+      return absenMasukTypes;
+    }
+
+    if (hasCompletedAbsenMasuk && absenKeluarTypes.length > 0) {
+      return absenKeluarTypes;
+    }
+
+    return absenTypes;
+  }, [
+    absenKeluarTypes,
+    absenMasukTypes,
+    absenTypes,
+    hasAnyAttendanceToday,
+    hasCompletedAbsenMasuk,
+  ]);
+
   const selectedTypeDetail = useMemo(
     () =>
-      absenTypes.find(
+      displayedAbsenTypes.find(
         (type) => String(type.absen_id) === String(selectedAbsenType)
       ) || null,
-    [absenTypes, selectedAbsenType]
+    [displayedAbsenTypes, selectedAbsenType]
   );
 
   const stopCamera = () => {
@@ -145,23 +190,6 @@ const AbsenKaryawan = () => {
           : [];
 
         setAbsenTypes(availableTypes);
-
-        setSelectedAbsenType((currentValue) => {
-          if (
-            currentValue &&
-            availableTypes.some(
-              (type) => String(type.absen_id) === String(currentValue)
-            )
-          ) {
-            return currentValue;
-          }
-
-          const firstAvailableType = availableTypes.find(
-            (type) => Number(type.is_absen_today) !== 1
-          );
-
-          return firstAvailableType ? String(firstAvailableType.absen_id) : "";
-        });
       }
     } catch (error) {
       console.error("Error fetching absen types:", error);
@@ -226,6 +254,25 @@ const AbsenKaryawan = () => {
       videoRef.current.srcObject = stream;
     }
   }, [cameraActive, stream]);
+
+  useEffect(() => {
+    setSelectedAbsenType((currentValue) => {
+      if (
+        currentValue &&
+        displayedAbsenTypes.some(
+          (type) => String(type.absen_id) === String(currentValue)
+        )
+      ) {
+        return currentValue;
+      }
+
+      const firstAvailableType = displayedAbsenTypes.find(
+        (type) => Number(type.is_absen_today) !== 1
+      );
+
+      return firstAvailableType ? String(firstAvailableType.absen_id) : "";
+    });
+  }, [displayedAbsenTypes]);
 
   useEffect(() => {
     return () => {
@@ -652,7 +699,7 @@ const AbsenKaryawan = () => {
           }}
         >
           <option value="">-- Pilih Tipe Absen --</option>
-          {absenTypes.map((type) => {
+          {displayedAbsenTypes.map((type) => {
             const isTakenToday = Number(type.is_absen_today) === 1;
 
             return (
@@ -668,7 +715,7 @@ const AbsenKaryawan = () => {
             );
           })}
         </select>
-        {absenTypes.length === 0 && (
+        {displayedAbsenTypes.length === 0 && (
           <p style={{ marginTop: "8px", color: "#c0392b", fontSize: "14px" }}>
             Tipe absen untuk shift aktif belum ditemukan.
           </p>
