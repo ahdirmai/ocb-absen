@@ -1,6 +1,6 @@
 import { Navigate } from "react-router-dom";
 
-const ALLOWED_DASHBOARD_ROLES = ["admin", "hr", "owner"];
+const ALLOWED_DASHBOARD_ROLES = ["admin", "hrd", "owner"];
 
 const getNormalizedRole = (userProfile) => {
   const normalizedProfile = Array.isArray(userProfile)
