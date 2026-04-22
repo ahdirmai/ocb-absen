@@ -160,28 +160,30 @@ const AbsenKaryawan = () => {
       }
 
       if (response.data.status === "success") {
-        const availableTypes = Array.isArray(response.data.data)
-          ? response.data.data
-          : [];
+        const rawTypes = Array.isArray(response.data.data) ? response.data.data : [];
 
-        setAbsenTypes(availableTypes);
+        // Ambil status apakah sudah absen hari ini dari root response
+        const isAbsenToday = Number(response.data.is_absen_today) === 1;
 
-        setSelectedAbsenType((currentValue) => {
-          if (
-            currentValue &&
-            availableTypes.some(
-              (type) => String(type.absen_id) === String(currentValue)
-            )
-          ) {
-            return currentValue;
-          }
+        // Filter otomatis: Jika sudah absen masuk (isAbsenToday: 1), hanya tampilkan tipe "Keluar"
+        // Jika belum absen masuk (isAbsenToday: 0), hanya tampilkan tipe "Masuk"
+        const filteredTypes = rawTypes.filter(type => {
+          const typeName = (type.name || "").toLowerCase();
+          const typeDesc = (type.description || "").toLowerCase();
+          const isMasuk = typeName.includes('masuk') || typeDesc.includes('masuk');
+          const isKeluar = typeName.includes('keluar') || typeDesc.includes('keluar');
 
-          const firstAvailableType = availableTypes.find(
-            (type) => Number(type.is_absen_today) !== 1
-          );
-
-          return firstAvailableType ? String(firstAvailableType.absen_id) : "";
+          return isAbsenToday ? isKeluar : isMasuk;
         });
+
+        setAbsenTypes(filteredTypes);
+
+        // Auto-select tipe absen pertama hasil filter
+        if (filteredTypes.length > 0) {
+          setSelectedAbsenType(String(filteredTypes[0].absen_id));
+        } else {
+          setSelectedAbsenType("");
+        }
       }
     } catch (error) {
       console.error("Error fetching absen types:", error);
@@ -206,11 +208,17 @@ const AbsenKaryawan = () => {
         return;
       }
 
-      setUserProfile(response.data.data || null);
+      // Backend mengirim data dalam array [data], ambil index ke-0
+      const profileData = Array.isArray(response.data.data)
+        ? response.data.data[0]
+        : response.data.data;
+
+      setUserProfile(profileData || null);
       sessionStorage.setItem(
         "userProfile",
-        JSON.stringify(response.data.data || null)
+        JSON.stringify(profileData || null)
       );
+
       await fetchAbsenTypes(token, userId);
     } catch (error) {
       console.error("Error fetching profile:", error);
@@ -600,10 +608,10 @@ const AbsenKaryawan = () => {
           }}
         >
           <p style={{ margin: "5px 0" }}>
-            <strong>Nama:</strong> {userProfile.name}
+            <strong>Nama:</strong> {userProfile.name || userProfile.nama || userProfile.full_name || "-"}
           </p>
           <p style={{ margin: "5px 0" }}>
-            <strong>Username:</strong> {userProfile.username}
+            <strong>Username:</strong> {userProfile.username || userProfile.user_name || "-"}
           </p>
           <p style={{ margin: "5px 0" }}>
             <strong>Retail Shift:</strong> {selectedTypeDetail?.retail_name || userProfile.retail_name || "-"}
@@ -681,26 +689,17 @@ const AbsenKaryawan = () => {
             fontSize: "16px",
           }}
         >
-          <option value="">-- Pilih Tipe Absen --</option>
-          {absenTypes.map((type) => {
-            const isTakenToday = Number(type.is_absen_today) === 1;
-
-            return (
-              <option
-                key={type.absen_id}
-                value={type.absen_id}
-                disabled={isTakenToday}
-              >
-                {type.name}
-                {type.retail_name ? ` - ${type.retail_name}` : ""}
-                {isTakenToday ? " (sudah absen hari ini)" : ""}
-              </option>
-            );
-          })}
+          <option value="" disabled>-- Pilih Tipe Absen --</option>
+          {absenTypes.map((type) => (
+            <option key={type.absen_id} value={type.absen_id}>
+              {type.name}
+              {type.retail_name ? ` - ${type.retail_name}` : ""}
+            </option>
+          ))}
         </select>
         {absenTypes.length === 0 && (
           <p style={{ marginTop: "8px", color: "#c0392b", fontSize: "14px" }}>
-            Tipe absen untuk shift aktif belum ditemukan.
+            Tipe absen untuk shift ini sudah selesai atau belum ditemukan.
           </p>
         )}
       </div>
