@@ -571,6 +571,31 @@ const getSalaryKaryawan= async(req, res) =>{
     
 }
 
+const getSalaryKaryawanByMonth = async (req, res) => {
+    const { month } = req.query;
+    try {
+        const idPotongan = 2;
+        const getPotonganMangkir = await usersModel.getPotonganMangkir(idPotongan);
+        const PotonganMangkir = getPotonganMangkir.value;
+
+        let data;
+        if (month) {
+            [data] = await feeModel.getSalaryKaryawanByMonth(PotonganMangkir, month);
+        } else {
+            [data] = await feeModel.getSalaryKaryawan(PotonganMangkir);
+        }
+
+        res.json({ data });
+    } catch (error) {
+        res.status(500).json({
+            message: 'Internal Server Error',
+            status: 'failed',
+            status_code: '500',
+            serverMessage: error,
+        });
+    }
+};
+
 const getPotongan = async(req, res) =>{
     try{
         const [data] = await feeModel.getPotongan();
@@ -638,6 +663,7 @@ module.exports={
     deleteBonus,
     updateBonus,
     getSalaryKaryawan,
+    getSalaryKaryawanByMonth,
     getTypePB,
     getPotongan,
     updatePotongan,

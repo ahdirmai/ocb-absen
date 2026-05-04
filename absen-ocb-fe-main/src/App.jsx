@@ -19,6 +19,7 @@ import Potongan from "./Pages/Potongan";
 import Laporan from "./Pages/Laporan";
 import Profile from "./Pages/Profile";
 import AbsenKaryawan from "./Pages/AbsenKaryawan";
+import SalaryKpi from "./Pages/SalaryKpi";
 function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const toggleSidebar = () => {
@@ -53,6 +54,7 @@ function App() {
                     <Route path="/offday" element={<OffDay />} />
                     <Route path="/bonus" element={<Bonus />} />
                     <Route path="/salary" element={<Salary />} />
+                    <Route path="/salary-kpi" element={<SalaryKpi />} />
                     <Route path="/management-user" element={<RolesAndCategory />} />
                     <Route path="/menu-category" element={<MenuCategory />} />
                     <Route path="/potongan" element={<Potongan />} />

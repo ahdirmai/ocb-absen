@@ -17,6 +17,7 @@ router.post('/updatebonus/:bonusID', authenticateToken, feeController.updateBonu
 router.post('/deleteoffday/:offID', authenticateToken, feeController.deleteOffDay );
 router.post('/deletebonus/:bonusID', authenticateToken, feeController.deleteBonus );
 router.get('/fee-karyawan', authenticateToken, feeController.getSalaryKaryawan );
+router.get('/fee-karyawan-history', authenticateToken, feeController.getSalaryKaryawanByMonth );
 router.get('/potongan', authenticateToken, feeController.getPotongan );
 router.post('/update-potongan/:potonganID', authenticateToken, feeController.updatePotongan );
 

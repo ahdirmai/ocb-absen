@@ -11,6 +11,10 @@ const Salary = () => {
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const [selectedMonth, setSelectedMonth] = useState(defaultMonth);
   const [filterText, setFilterText] = useState({
     name: "",
     username: "",
@@ -37,32 +41,29 @@ const Salary = () => {
     }).format(value);
   };
 
+  const fetchData = async (month) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const token = localStorage.getItem("token");
+      const headers = { Authorization: `Bearer ${token}` };
+
+      const salaryResponse = await axios.get(`${VITE_API_URL}/management/fee-karyawan-history`, {
+        headers,
+        params: { month },
+      });
+      const salaryData = salaryResponse.data.data || [];
+      setsalary(salaryData.filter((item) => item && item.name));
+    } catch (error) {
+      setError(error.response?.data?.message || error.message);
+      console.error("Failed to fetch data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const token = localStorage.getItem("token");
-        const headers = { Authorization: `Bearer ${token}` };
-
-        // Fetch salary data
-        const salaryResponse = await axios.get(`${VITE_API_URL}/management/fee-karyawan`, {
-          headers,
-        });
-        const salaryData = salaryResponse.data.data || [];
-        const validsalaryData = salaryData.filter((item) => item && item.name);
-        setsalary(validsalaryData);
-
-        // Clear errors
-        setError(null);
-      } catch (error) {
-        setError(error.response?.data?.message || error.message);
-        console.error("Failed to fetch data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
+    fetchData(selectedMonth);
   }, []);
 
   // const filteredsalary = salary.filter(
@@ -284,7 +285,21 @@ const Salary = () => {
                 ) : (
                   <>
                     <div className="row mb-3">
-                      <div className="col-sm-8">
+                      <div className="col-sm-8 d-flex align-items-center gap-2 flex-wrap">
+                        <input
+                          type="month"
+                          className="form-control form-control-sm"
+                          style={{ width: "160px" }}
+                          value={selectedMonth}
+                          onChange={(e) => setSelectedMonth(e.target.value)}
+                        />
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => fetchData(selectedMonth)}
+                          disabled={loading}
+                        >
+                          {loading ? "Loading..." : "Tampilkan"}
+                        </button>
                         <button
                           className="btn btn-success btn-sm"
                           onClick={exportToExcel}
