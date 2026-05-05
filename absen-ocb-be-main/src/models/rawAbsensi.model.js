@@ -33,16 +33,17 @@ const getRawAbsensi = async (startDate, endDate) => {
                 ELSE 'Tidak Diketahui'
             END             AS status_kehadiran
         FROM user u
-        LEFT JOIN absensi a
-            ON  a.user_id = u.user_id
-            AND DATE(a.absen_time) >= ?
-            AND DATE(a.absen_time) <= ?
+        LEFT JOIN (
+            SELECT ab.*
+            FROM absensi ab
+            JOIN tipe_absen ts ON ts.absen_id = ab.absen_type_id
+                              AND ts.description LIKE '%masuk%'
+            WHERE DATE(ab.absen_time) BETWEEN ? AND ?
+        ) a ON a.user_id = u.user_id
         LEFT JOIN retail r      ON r.retail_id = a.retail_id
         LEFT JOIN tipe_absen ta ON ta.absen_id = a.absen_type_id
-                               AND ta.description LIKE '%masuk%'
         LEFT JOIN user uz       ON uz.user_id  = a.approval_by
         WHERE u.is_deleted = 0
-          AND (ta.description LIKE '%masuk%' OR a.absensi_id IS NULL)
         ORDER BY u.name ASC, a.absen_time DESC
     `;
     return dbpool.execute(SQLQuery, [startDate, endDate]);
