@@ -14,6 +14,7 @@ const menuRoutes = require('./routes/menu');
 const versionRoute = require('./routes/version');
 const laporanRoute = require('./routes/laporan')
 const kpiSalaryRoute = require('./routes/kpiSalary')
+const rawAbsensiRoute = require('./routes/rawAbsensi')
 // const midllewareLogRequest = require('./middleware/logs');
 const createError = require('http-errors');
 const cors = require('cors');
@@ -43,6 +44,7 @@ app.use('/api/menu', menuRoutes);
 app.use('/api/version', versionRoute);
 app.use('/api/file', laporanRoute)
 app.use('/api/management', kpiSalaryRoute)
+app.use('/api/raw-absensi', rawAbsensiRoute)
 app.use(async (req, res, next) => {
     next(createError.NotFound())
 })
