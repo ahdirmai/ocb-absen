@@ -103,10 +103,11 @@ const getRawAbsensi = async (req, res) => {
 };
 
 const buildSummary = (rows) => {
-    const summary = { ontime: 0, telat: 0 };
+    const summary = { ontime: 0, telat: 0, belum_absen: 0 };
     for (const row of rows) {
-        if (row.status_kehadiran === 'Ontime')     summary.ontime++;
-        else if (row.status_kehadiran === 'Telat') summary.telat++;
+        if (row.status_kehadiran === 'Ontime')           summary.ontime++;
+        else if (row.status_kehadiran === 'Telat')       summary.telat++;
+        else if (row.status_kehadiran === 'Belum Absen') summary.belum_absen++;
     }
     return summary;
 };
