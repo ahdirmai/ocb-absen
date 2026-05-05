@@ -1,8 +1,12 @@
 const dbpool = require('../config/database');
 
 /**
- * Ambil semua user aktif beserta data absensi mereka pada rentang tanggal tertentu.
- * User yang belum absen pada hari itu tetap muncul dengan status "Belum Absen".
+ * Ambil semua user aktif beserta data absensi MASUK mereka pada rentang tanggal tertentu.
+ * Hanya tipe_absen dengan nama mengandung kata "masuk" (case-insensitive) yang dihitung.
+ * User yang belum absen masuk tetap muncul dengan status "Belum Absen".
+ *
+ * jam_masuk_seharusnya diambil dari tipe_absen.start_time — jam inilah yang dipakai
+ * controller untuk menentukan status ontime/telat saat absen dibuat.
  *
  * @param {string} startDate - Format: 'YYYY-MM-DD'
  * @param {string} endDate   - Format: 'YYYY-MM-DD'
@@ -30,9 +34,11 @@ const getRawAbsensi = async (startDate, endDate) => {
             a.is_valid
         FROM user u
         LEFT JOIN (
-            SELECT *
-            FROM absensi
-            WHERE DATE(absen_time) BETWEEN ? AND ?
+            SELECT ab.*
+            FROM absensi ab
+            JOIN tipe_absen ta_sub ON ta_sub.absen_id = ab.absen_type_id
+            WHERE DATE(ab.absen_time) BETWEEN ? AND ?
+              AND ta_sub.name LIKE '%masuk%'
         ) a ON a.user_id = u.user_id
         LEFT JOIN tipe_absen ta ON ta.absen_id = a.absen_type_id
         LEFT JOIN retail r ON r.retail_id = a.retail_id
@@ -45,7 +51,7 @@ const getRawAbsensi = async (startDate, endDate) => {
 
 /**
  * Sama seperti getRawAbsensi tapi hanya untuk satu tanggal (harian).
- * Setiap user yang belum absen pada tanggal tersebut tetap disertakan.
+ * User yang belum absen masuk pada tanggal tersebut tetap disertakan.
  *
  * @param {string} date - Format: 'YYYY-MM-DD'
  */
@@ -74,6 +80,11 @@ const getRawAbsensiHarian = async (date) => {
         LEFT JOIN absensi a
             ON  a.user_id = u.user_id
             AND DATE(a.absen_time) = ?
+            AND EXISTS (
+                SELECT 1 FROM tipe_absen ta_sub
+                WHERE ta_sub.absen_id = a.absen_type_id
+                  AND ta_sub.name LIKE '%masuk%'
+            )
         LEFT JOIN tipe_absen ta ON ta.absen_id = a.absen_type_id
         LEFT JOIN retail r ON r.retail_id = a.retail_id
         WHERE u.is_deleted = 0

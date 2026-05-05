@@ -183,7 +183,9 @@ GET /api/raw-absensi?period=monthly&month=2025-04
 
 - Timezone yang digunakan: **Asia/Makassar (WITA, UTC+8)**.
 - Karyawan yang dilibatkan: hanya user dengan `is_deleted = 0` dan `enabled = 1`.
-- Jika satu karyawan melakukan lebih dari satu absensi dalam periode yang sama, seluruh record ditampilkan (masing-masing baris terpisah).
+- **Hanya absen masuk** yang ditampilkan — difilter dengan `tipe_absen.name LIKE '%masuk%'` (case-insensitive). Tipe absen keluar/pulang tidak diikutsertakan.
+- `jam_masuk_seharusnya` diambil dari `tipe_absen.start_time` — inilah jam yang dipakai sistem untuk menentukan status **Ontime** atau **Telat** saat absensi dibuat.
+- Jika satu karyawan melakukan lebih dari satu absensi masuk dalam periode yang sama, seluruh record ditampilkan (masing-masing baris terpisah).
 - Rentang mingguan mengikuti **ISO Week** (Senin = hari pertama).
 
 ---
