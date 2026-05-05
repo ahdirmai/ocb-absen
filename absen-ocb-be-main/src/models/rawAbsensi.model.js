@@ -14,7 +14,7 @@ const getRawAbsensi = async (startDate, endDate) => {
             a.absensi_id,
             a.user_id,
             u.name          AS nama_karyawan,
-            a.absen_time,
+            DATE_FORMAT(a.absen_time, '%Y-%m-%d %H:%i:%s') AS absen_time,
             a.retail_id,
             r.name          AS retail_name,
             a.absen_type_id,
