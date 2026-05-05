@@ -73,21 +73,9 @@ const getRawAbsensi = async (req, res) => {
                 refDate = now.clone();
             }
             const dateStr = refDate.format('YYYY-MM-DD');
-            label = `Harian – ${dateStr}`;
-
-            // Khusus daily, gunakan query yang lebih efisien (satu tanggal)
-            const [data] = await rawAbsensiModel.getRawAbsensiHarian(dateStr);
-
-            return res.json({
-                message: 'Get Raw Absensi Successfully!',
-                status: 'success',
-                status_code: '200',
-                period,
-                label,
-                total_data: data.length,
-                summary: buildSummary(data),
-                data,
-            });
+            startDate = dateStr;
+            endDate   = dateStr;
+            label     = `Harian – ${dateStr}`;
         }
 
         const [data] = await rawAbsensiModel.getRawAbsensi(startDate, endDate);
@@ -114,15 +102,11 @@ const getRawAbsensi = async (req, res) => {
     }
 };
 
-/**
- * Hitung ringkasan jumlah Ontime / Telat / Belum Absen dari baris hasil query.
- */
 const buildSummary = (rows) => {
-    const summary = { ontime: 0, telat: 0, belum_absen: 0 };
+    const summary = { ontime: 0, telat: 0 };
     for (const row of rows) {
-        if (row.status_kehadiran === 'Ontime')       summary.ontime++;
-        else if (row.status_kehadiran === 'Telat')   summary.telat++;
-        else if (row.status_kehadiran === 'Belum Absen') summary.belum_absen++;
+        if (row.status_kehadiran === 'Ontime')     summary.ontime++;
+        else if (row.status_kehadiran === 'Telat') summary.telat++;
     }
     return summary;
 };
