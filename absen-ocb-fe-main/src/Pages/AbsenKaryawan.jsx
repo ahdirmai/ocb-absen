@@ -31,6 +31,28 @@ const AbsenKaryawan = () => {
 
   const hasLocation = location.latitude !== null && location.longitude !== null;
 
+  const hitungJarak = (lat1, lon1, lat2, lon2) => {
+    const R = 6371000;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+
+  const locationStatus = useMemo(() => {
+    if (!hasLocation || !selectedTypeDetail) return null;
+    const { latitude: retLat, longitude: retLon, radius, retail_name } = selectedTypeDetail;
+    if (!retLat || !retLon || !radius) return null;
+    const jarak = hitungJarak(location.latitude, location.longitude, Number(retLat), Number(retLon));
+    const dalamRadius = jarak <= Number(radius);
+    return { dalamRadius, jarak: Math.round(jarak), radius: Number(radius), retail_name };
+  }, [hasLocation, location, selectedTypeDetail]);
+
   const selectedTypeDetail = useMemo(
     () =>
       absenTypes.find(
