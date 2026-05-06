@@ -99,13 +99,7 @@ const checkAbsensi = async (req, res, next) => {
       );
 
       if (jarak > Number(retail.radius)) {
-        return rejectValidation(
-          req,
-          res,
-          `Anda berada di luar radius toko ${retail.name}. Jarak Anda: ${jarak.toFixed(
-            0
-          )} meter, Radius maksimal: ${retail.radius} meter`
-        );
+        req.body.is_approval = 1;
       }
     }
 
