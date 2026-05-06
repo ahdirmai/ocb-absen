@@ -460,8 +460,9 @@ const AbsenKaryawan = () => {
       formData.append("absen_type_id", selectedAbsenType);
       formData.append("latitude", String(location.latitude));
       formData.append("longitude", String(location.longitude));
-      formData.append("reason", "");
-      formData.append("is_approval", 0);
+      const isOutsideRadius = locationStatus ? !locationStatus.dalamRadius : false;
+      formData.append("reason", isOutsideRadius ? "Absen di luar radius" : "");
+      formData.append("is_approval", isOutsideRadius ? 1 : 0);
       formData.append("photo_url", photo);
 
       const response = await axios.post(`${VITE_API_URL}/absensi/`, formData, {
@@ -694,6 +695,13 @@ const AbsenKaryawan = () => {
             ? `(${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)})`
             : "(Belum aktif)"}
         </p>
+        {locationStatus && (
+          <p style={{ margin: "5px 0", color: locationStatus.dalamRadius ? "green" : "#f39c12", fontWeight: "bold" }}>
+            {locationStatus.dalamRadius
+              ? `Dalam radius ${locationStatus.retail_name} (${locationStatus.jarak}m / maks ${locationStatus.radius}m)`
+              : `Di luar radius ${locationStatus.retail_name} (${locationStatus.jarak}m / maks ${locationStatus.radius}m) — absen akan menunggu approval atasan`}
+          </p>
+        )}
         <p style={{ margin: "5px 0", color: photo ? "green" : "red" }}>
           {photo ? "Siap" : "Belum"} Foto Selfie{" "}
           {photo ? "(Sudah diambil)" : "(Belum diambil)"}
