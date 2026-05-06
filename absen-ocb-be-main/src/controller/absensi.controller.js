@@ -88,6 +88,7 @@ const createAbsensi = async (req, res) => {
     }
 
     status_approval = body.is_approval == 1 ? 1 : 2;
+    const is_valid = body.is_approval == 1 ? 0 : 1;
 
     const result = await absensiModel.createAbsensi(
       body,
@@ -96,7 +97,8 @@ const createAbsensi = async (req, res) => {
       status_approval,
       upline,
       timeAbsenFull,
-      potongan
+      potongan,
+      is_valid
     );
 
     if (!result) {

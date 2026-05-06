@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import Swal from "sweetalert2";
 import { jwtDecode } from "jwt-decode";
+import { format } from "date-fns";
+import { id as localeId } from "date-fns/locale";
 
 const VITE_API_URL = import.meta.env.VITE_API_URL;
 
@@ -24,6 +26,8 @@ const AbsenKaryawan = () => {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const isRequestingLocationRef = useRef(false);
@@ -77,7 +81,26 @@ const AbsenKaryawan = () => {
     setPhotoPreview(null);
     setLocation(initialLocation);
     setLocationError("");
+    setHistory([]);
     stopCamera();
+  };
+
+  const fetchHistory = async (token, userId) => {
+    setHistoryLoading(true);
+    try {
+      const response = await axios.post(
+        `${VITE_API_URL}/absensi/history-user/${userId}`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (response.data.status === "success") {
+        setHistory(Array.isArray(response.data.data) ? response.data.data : []);
+      }
+    } catch (error) {
+      console.error("Error fetching history:", error);
+    } finally {
+      setHistoryLoading(false);
+    }
   };
 
   const resetSession = () => {
@@ -243,6 +266,7 @@ const AbsenKaryawan = () => {
       );
 
       await fetchAbsenTypes(token, userId);
+      await fetchHistory(token, userId);
     } catch (error) {
       console.error("Error fetching profile:", error);
 
@@ -482,6 +506,7 @@ const AbsenKaryawan = () => {
         setPhoto(null);
         setPhotoPreview(null);
         await fetchAbsenTypes(authData.token, authData.userId);
+        await fetchHistory(authData.token, authData.userId);
         requestLocation();
       } else {
         Swal.fire("Gagal", response.data.message || "Absen gagal.", "error");
@@ -884,6 +909,97 @@ const AbsenKaryawan = () => {
           Lengkapi semua checklist di atas untuk submit absen.
         </p>
       )}
+
+      {/* Riwayat Absen Bulan Ini */}
+      <div style={{ marginTop: "30px" }}>
+        <h3 style={{ color: "#e74c3c", marginBottom: "12px", fontSize: "16px" }}>
+          Riwayat Absen Bulan Ini
+        </h3>
+
+        {historyLoading ? (
+          <p style={{ textAlign: "center", color: "#888" }}>Memuat riwayat...</p>
+        ) : history.length === 0 ? (
+          <p style={{ textAlign: "center", color: "#888", fontSize: "14px" }}>
+            Belum ada data absen bulan ini.
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {history.map((item) => {
+              const isValid = item.is_valid === 1 || item.is_valid === "1";
+              const isPending = item.status_approval === "1" || item.status_approval === 1;
+              const isRejected = item.status_approval === "3" || item.status_approval === 3;
+              const isOntime = item.status === "Ontime" || item.status_absen === 1 || item.status_absen === "1";
+
+              let statusLabel = "";
+              let statusColor = "";
+              if (isRejected) {
+                statusLabel = "Ditolak";
+                statusColor = "#e74c3c";
+              } else if (isPending) {
+                statusLabel = "Menunggu Approval";
+                statusColor = "#f39c12";
+              } else if (isValid) {
+                statusLabel = "Valid";
+                statusColor = "#27ae60";
+              } else {
+                statusLabel = "Belum Divalidasi";
+                statusColor = "#95a5a6";
+              }
+
+              return (
+                <div
+                  key={item.absensi_id}
+                  style={{
+                    background: "#f9f9f9",
+                    border: "1px solid #eee",
+                    borderLeft: `4px solid ${statusColor}`,
+                    borderRadius: "8px",
+                    padding: "12px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: "10px",
+                  }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <p style={{ margin: "0 0 4px", fontWeight: "bold", fontSize: "14px" }}>
+                      {item.description || item.category_absen || "-"}
+                    </p>
+                    <p style={{ margin: "0 0 2px", fontSize: "13px", color: "#555" }}>
+                      {item.absen_time
+                        ? format(new Date(item.absen_time), "dd MMM yyyy, HH:mm", { locale: localeId })
+                        : "-"}
+                    </p>
+                    <p style={{ margin: 0, fontSize: "12px", color: isOntime ? "#27ae60" : "#e74c3c" }}>
+                      {item.status || (isOntime ? "Ontime" : "Terlambat")}
+                    </p>
+                    {item.reason ? (
+                      <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#888" }}>
+                        Catatan: {item.reason}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <span
+                      style={{
+                        display: "inline-block",
+                        padding: "3px 8px",
+                        borderRadius: "12px",
+                        fontSize: "11px",
+                        fontWeight: "bold",
+                        background: statusColor,
+                        color: "#fff",
+                      }}
+                    >
+                      {statusLabel}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

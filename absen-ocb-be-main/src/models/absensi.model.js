@@ -1,10 +1,10 @@
 const dbpool = require('../config/database');
 
 
-const createAbsensi = async (body, imageUrl, status_absen, status_approval, upline, timeAbsenFull, potongan) => {
-    const query = `INSERT INTO absensi (user_id, retail_id, absen_type_id, absen_time, latitude, longitude, reason, potongan, photo_url, is_approval, approval_by, status_absen, status_approval) 
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-  
+const createAbsensi = async (body, imageUrl, status_absen, status_approval, upline, timeAbsenFull, potongan, is_valid) => {
+    const query = `INSERT INTO absensi (user_id, retail_id, absen_type_id, absen_time, latitude, longitude, reason, potongan, photo_url, is_approval, approval_by, status_absen, status_approval, is_valid)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
     const values = [
       body.user_id,
       body.retail_id,
@@ -18,7 +18,8 @@ const createAbsensi = async (body, imageUrl, status_absen, status_approval, upli
       body.is_approval,
       upline,
       status_absen,
-      status_approval
+      status_approval,
+      is_valid
     ];
   
     // Eksekusi query untuk insert data absensi
