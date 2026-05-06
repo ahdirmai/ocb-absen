@@ -44,6 +44,14 @@ const AbsenKaryawan = () => {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
 
+  const selectedTypeDetail = useMemo(
+    () =>
+      absenTypes.find(
+        (type) => String(type.absen_id) === String(selectedAbsenType)
+      ) || null,
+    [absenTypes, selectedAbsenType]
+  );
+
   const locationStatus = useMemo(() => {
     if (!hasLocation || !selectedTypeDetail) return null;
     const { latitude: retLat, longitude: retLon, radius, retail_name } = selectedTypeDetail;
@@ -52,14 +60,6 @@ const AbsenKaryawan = () => {
     const dalamRadius = jarak <= Number(radius);
     return { dalamRadius, jarak: Math.round(jarak), radius: Number(radius), retail_name };
   }, [hasLocation, location, selectedTypeDetail]);
-
-  const selectedTypeDetail = useMemo(
-    () =>
-      absenTypes.find(
-        (type) => String(type.absen_id) === String(selectedAbsenType)
-      ) || null,
-    [absenTypes, selectedAbsenType]
-  );
 
   const stopCamera = () => {
     if (stream) {
