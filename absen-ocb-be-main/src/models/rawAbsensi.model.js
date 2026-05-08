@@ -15,8 +15,8 @@ const getRawAbsensi = async (startDate, endDate) => {
             COALESCE(a.user_id, u.user_id) AS user_id,
             u.name          AS nama_karyawan,
             DATE_FORMAT(a.absen_time, '%Y-%m-%d %H:%i:%s') AS absen_time,
-            COALESCE(a.retail_id, u.retail_id) AS retail_id,
-            COALESCE(r.name, ur.name) AS retail_name,
+            COALESCE(a.retail_id, s.retail_id) AS retail_id,
+            COALESCE(r.name, sr.name) AS retail_name,
             a.absen_type_id,
             ta.name         AS category_absen,
             ta.description,
@@ -33,6 +33,11 @@ const getRawAbsensi = async (startDate, endDate) => {
                 ELSE 'Tidak Diketahui'
             END             AS status_kehadiran
         FROM user u
+        LEFT JOIN shift_employes se ON se.user_id = u.user_id
+        LEFT JOIN shifting s ON s.shifting_id = se.shifting_id
+                            AND DATE(?) BETWEEN s.start_date AND s.end_date
+                            AND s.is_deleted = 0
+        LEFT JOIN retail sr ON sr.retail_id = s.retail_id
         LEFT JOIN (
             SELECT ab.*
             FROM absensi ab
@@ -41,13 +46,12 @@ const getRawAbsensi = async (startDate, endDate) => {
             WHERE DATE(ab.absen_time) BETWEEN ? AND ?
         ) a ON a.user_id = u.user_id
         LEFT JOIN retail r      ON r.retail_id = a.retail_id
-        LEFT JOIN retail ur     ON ur.retail_id = u.retail_id
         LEFT JOIN tipe_absen ta ON ta.absen_id = a.absen_type_id
         LEFT JOIN user uz       ON uz.user_id  = a.approval_by
         WHERE u.is_deleted = 0
         ORDER BY u.name ASC, a.absen_time DESC
     `;
-    return dbpool.execute(SQLQuery, [startDate, endDate]);
+    return dbpool.execute(SQLQuery, [startDate, startDate, endDate]);
 };
 
 module.exports = { getRawAbsensi };
