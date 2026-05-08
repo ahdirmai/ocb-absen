@@ -12,11 +12,11 @@ const getRawAbsensi = async (startDate, endDate) => {
     const SQLQuery = `
         SELECT
             a.absensi_id,
-            a.user_id,
+            COALESCE(a.user_id, u.user_id) AS user_id,
             u.name          AS nama_karyawan,
             DATE_FORMAT(a.absen_time, '%Y-%m-%d %H:%i:%s') AS absen_time,
-            a.retail_id,
-            r.name          AS retail_name,
+            COALESCE(a.retail_id, u.retail_id) AS retail_id,
+            COALESCE(r.name, ur.name) AS retail_name,
             a.absen_type_id,
             ta.name         AS category_absen,
             ta.description,
@@ -41,6 +41,7 @@ const getRawAbsensi = async (startDate, endDate) => {
             WHERE DATE(ab.absen_time) BETWEEN ? AND ?
         ) a ON a.user_id = u.user_id
         LEFT JOIN retail r      ON r.retail_id = a.retail_id
+        LEFT JOIN retail ur     ON ur.retail_id = u.retail_id
         LEFT JOIN tipe_absen ta ON ta.absen_id = a.absen_type_id
         LEFT JOIN user uz       ON uz.user_id  = a.approval_by
         WHERE u.is_deleted = 0
