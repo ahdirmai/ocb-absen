@@ -2,7 +2,7 @@ const db = require('../config/database');
 
 exports.getRetail = async (req, res) => {
   const [rows] = await db.query(
-    'SELECT retail_id, name, latitude, longitude, radius, is_active FROM retail WHERE is_deleted = 0'
+    'SELECT retail_id, name, latitude, longitude, radius, is_active, is_deleted FROM retail'
   );
   res.json(rows);
 };
