@@ -16,7 +16,11 @@ exports.getUserCategories = async (req, res) => {
 
 exports.getUsers = async (req, res) => {
   const [rows] = await db.query(
-    'SELECT user_id, name, username, password, category_user, upline, enabled, photo_url FROM user WHERE is_deleted = 0'
+    `SELECT u.user_id, u.name, u.username, u.password, u.category_user,
+      u.upline, up.name AS upline_name, u.enabled, u.photo_url
+     FROM user u
+     LEFT JOIN user up ON up.user_id = u.upline
+     WHERE u.is_deleted = 0`
   );
   res.json(rows);
 };
