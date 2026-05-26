@@ -25,6 +25,15 @@ exports.getUsers = async (req, res) => {
   res.json(rows);
 };
 
+exports.getAbsenCategories = async (req, res) => {
+  const [rows] = await db.query(
+    `SELECT absen_id, name, description, fee, group_absen, start_time, end_time,
+      kategori_absen, retail_id, is_deleted
+     FROM tipe_absen`
+  );
+  res.json(rows);
+};
+
 exports.getShifts = async (req, res) => {
   const [shifts] = await db.query(
     `SELECT shifting_id, user_id, retail_id,
