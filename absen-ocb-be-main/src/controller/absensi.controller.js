@@ -354,6 +354,108 @@ const historyAbsensiAllUser = async (req, res) => {
   }
 };
 
+const rekapKalender = async (req, res) => {
+  try {
+    const { month, retail_id } = req.query;
+
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const targetMonth = month || currentMonth;
+
+    const [year, mon] = targetMonth.split("-").map(Number);
+    const daysInMonth = new Date(year, mon, 0).getDate();
+
+    const users = await absensiModel.getRekapKalenderUsers(targetMonth, retail_id || null);
+    const absensiRows = await absensiModel.getRekapKalenderAbsensi(targetMonth, retail_id || null);
+    const offdayRows = await absensiModel.getRekapKalenderOffday(targetMonth, retail_id || null);
+
+    const toDateStr = (val) => {
+      if (!val) return null;
+      if (val instanceof Date) return moment(val).tz(timezone).format("YYYY-MM-DD");
+      return String(val).slice(0, 10);
+    };
+
+    // Map absensi: key = "userId_YYYY-MM-DD" → { status_absen, absen_time }
+    const absensiMap = {};
+    for (const row of absensiRows) {
+      const dateStr = toDateStr(row.tanggal);
+      if (!dateStr) continue;
+      const key = `${row.user_id}_${dateStr}`;
+      if (!absensiMap[key]) {
+        absensiMap[key] = {
+          status: row.status_absen,
+          time: row.absen_time
+            ? moment(row.absen_time).tz(timezone).format("DD/MM/YYYY HH:mm")
+            : null,
+        };
+      }
+    }
+
+    // Map offday: key = "userId_YYYY-MM-DD" → true
+    const offdayMap = {};
+    for (const row of offdayRows) {
+      const dateStr = toDateStr(row.tanggal);
+      if (!dateStr) continue;
+      offdayMap[`${row.user_id}_${dateStr}`] = true;
+    }
+
+    // Group users by retail
+    const retailMap = {};
+    for (const user of users) {
+      if (!retailMap[user.retail_id]) {
+        retailMap[user.retail_id] = {
+          retail_id: user.retail_id,
+          retail_name: user.retail_name,
+          users: [],
+        };
+      }
+
+      const attendance = {};
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${year}-${String(mon).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        const key = `${user.user_id}_${dateStr}`;
+        if (offdayMap[key]) {
+          attendance[d] = { status: "libur", time: null };
+        } else if (absensiMap[key]?.status === 1) {
+          attendance[d] = { status: "hadir", time: absensiMap[key].time };
+        } else if (absensiMap[key]?.status === 2) {
+          attendance[d] = { status: "terlambat", time: absensiMap[key].time };
+        } else {
+          const cellDate = moment.tz(dateStr, timezone).startOf("day");
+          const today = moment().tz(timezone).startOf("day");
+          attendance[d] = {
+            status: cellDate.isAfter(today) ? "belum" : "alpha",
+            time: null,
+          };
+        }
+      }
+
+      retailMap[user.retail_id].users.push({
+        user_id: user.user_id,
+        name: user.name,
+        attendance,
+      });
+    }
+
+    res.json({
+      message: "Rekap Kalender Absensi",
+      status: "success",
+      status_code: "200",
+      month: targetMonth,
+      days_in_month: daysInMonth,
+      data: Object.values(retailMap),
+    });
+  } catch (error) {
+    console.error("Error rekapKalender:", error);
+    res.status(500).json({
+      message: "Internal Server Error",
+      status: "failed",
+      status_code: "500",
+      serverMessage: error.message,
+    });
+  }
+};
+
 module.exports = {
   createAbsensi,
   approveAbsen,
@@ -364,4 +466,5 @@ module.exports = {
   totalAbsenPerMonth,
   cekFeePeruser,
   historyAbsensiAllUser,
+  rekapKalender,
 };

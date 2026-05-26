@@ -16,6 +16,11 @@ const navigationLinks = [
     icon: "mdi-calendar-clock",
   },
   {
+    name: "Rekap Kalender",
+    path: "/rekap-kalender",
+    icon: "mdi-calendar-month",
+  },
+  {
     name: "Kelola Cuti & Off",
     path: "/offday",
     icon: "mdi-bed",

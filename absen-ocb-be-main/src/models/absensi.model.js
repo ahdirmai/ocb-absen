@@ -268,6 +268,61 @@ const cekAbesensiToday = async (user_id, absen_type_id) => {
 
 
 
+const getRekapKalenderUsers = async (month, retailId) => {
+    // Ambil user + retail dari shift aktif pada bulan tersebut
+    let query = `
+        SELECT DISTINCT u.user_id, u.name, r.retail_id, r.name AS retail_name
+        FROM user u
+        JOIN shift_employes se ON se.user_id = u.user_id
+        JOIN shifting s ON s.shifting_id = se.shifting_id AND s.is_Deleted = 0
+            AND DATE_FORMAT(s.start_date, '%Y-%m') <= ? AND DATE_FORMAT(s.end_date, '%Y-%m') >= ?
+        JOIN retail r ON r.retail_id = s.retail_id AND r.is_deleted = 0
+        WHERE u.is_deleted = 0
+    `;
+    const params = [month, month];
+    if (retailId) {
+        query += ` AND r.retail_id = ?`;
+        params.push(retailId);
+    }
+    query += ` ORDER BY r.name, u.name`;
+    const [rows] = await dbpool.execute(query, params);
+    return rows;
+};
+
+const getRekapKalenderAbsensi = async (month, retailId) => {
+    let query = `
+        SELECT a.user_id, DATE(a.absen_time) AS tanggal, a.status_absen, a.absen_time
+        FROM absensi a
+        JOIN tipe_absen ta ON ta.absen_id = a.absen_type_id
+        WHERE DATE_FORMAT(a.absen_time, '%Y-%m') = ?
+          AND ta.description LIKE 'Absen Masuk%'
+    `;
+    const params = [month];
+    if (retailId) {
+        query += ` AND a.retail_id = ?`;
+        params.push(retailId);
+    }
+    query += ` ORDER BY a.user_id, tanggal`;
+    const [rows] = await dbpool.execute(query, params);
+    return rows;
+};
+
+const getRekapKalenderOffday = async (month, retailId) => {
+    let query = `
+        SELECT oe.user_id, DATE(o.tanggal) AS tanggal
+        FROM offday o
+        JOIN offday_employes oe ON oe.id_offday = o.id
+        WHERE DATE_FORMAT(o.tanggal, '%Y-%m') = ? AND o.is_deleted = 0
+    `;
+    const params = [month];
+    if (retailId) {
+        query += ` AND oe.user_id IN (SELECT user_id FROM user WHERE retail_id = ? AND is_deleted = 0)`;
+        params.push(retailId);
+    }
+    const [rows] = await dbpool.execute(query, params);
+    return rows;
+};
+
 module.exports={
     createAbsensi,
     historyAbsensiPerUser,
@@ -281,5 +336,8 @@ module.exports={
     rejectAbsen,
     validasiAbsen,
     getPotonganLate,
-    cekAbesensiToday
+    cekAbesensiToday,
+    getRekapKalenderUsers,
+    getRekapKalenderAbsensi,
+    getRekapKalenderOffday
 }
