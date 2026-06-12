@@ -115,7 +115,7 @@ JOIN
 JOIN 
     retail r ON r.retail_id = s.retail_id
 LEFT JOIN 
-  (select absensi_id, absen_type_id, user_id from absensi where absen_time >= CURDATE()) a on a.absen_type_id = t.absen_id AND a.user_id = u.user_id
+  (select absensi_id, absen_type_id, user_id from absensi where absen_time >= CURDATE() AND is_valid=1 ) a on a.absen_type_id = t.absen_id AND a.user_id = u.user_id
 WHERE 
     se.user_id = ? 
     AND s.start_date <= CURDATE() 
