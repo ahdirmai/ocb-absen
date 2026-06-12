@@ -208,19 +208,11 @@ const AbsenKaryawan = () => {
       if (response.data.status === "success") {
         const rawTypes = Array.isArray(response.data.data) ? response.data.data : [];
 
-        // Ambil status apakah sudah absen hari ini dari root response
-        const isAbsenToday = Number(response.data.is_absen_today) === 1;
-
-        // Filter otomatis: Jika sudah absen masuk (isAbsenToday: 1), hanya tampilkan tipe "Keluar"
-        // Jika belum absen masuk (isAbsenToday: 0), hanya tampilkan tipe "Masuk"
-        const filteredTypes = rawTypes.filter(type => {
-          const typeName = (type.name || "").toLowerCase();
-          const typeDesc = (type.description || "").toLowerCase();
-          const isMasuk = typeName.includes('masuk') || typeDesc.includes('masuk');
-          const isKeluar = typeName.includes('keluar') || typeDesc.includes('keluar');
-
-          return isAbsenToday ? isKeluar : isMasuk;
-        });
+        // Hanya tampilkan tipe yang belum pernah di-submit hari ini (per absensi tipe).
+        // catatan: Backend mengisi `is_absen_today` per `absen_id`.
+        const filteredTypes = rawTypes.filter(
+          (type) => Number(type.is_absen_today) !== 1
+        );
 
         setAbsenTypes(filteredTypes);
 
@@ -484,9 +476,58 @@ const AbsenKaryawan = () => {
       formData.append("absen_type_id", selectedAbsenType);
       formData.append("latitude", String(location.latitude));
       formData.append("longitude", String(location.longitude));
+
       const isOutsideRadius = locationStatus ? !locationStatus.dalamRadius : false;
-      formData.append("reason", isOutsideRadius ? "Absen di luar radius" : "");
-      formData.append("is_approval", isOutsideRadius ? 1 : 0);
+
+      // Lembur masuk di-FE: jika hari ini sudah ada pasangan "masuk" dan "keluar",
+      // maka absen masuk berikutnya dianggap lembur dan perlu approval.
+      const selectedTypeName = (selectedTypeDetail?.name || "").toLowerCase();
+      const selectedTypeDesc = (selectedTypeDetail?.description || "").toLowerCase();
+      const isMasukType =
+        selectedTypeName.includes("masuk") || selectedTypeDesc.includes("masuk");
+
+      const todayKey = format(new Date(), "yyyy-MM-dd");
+      const todayAbsensi = (history || []).filter((item) => {
+        const t = item?.absen_time;
+        if (!t) return false;
+        const itemKey = format(new Date(t), "yyyy-MM-dd");
+        return itemKey === todayKey;
+      });
+
+      const hasMasukToday = todayAbsensi.some((item) =>
+        String(item?.category_absen || "")
+          .toLowerCase()
+          .includes("masuk") ||
+        String(item?.description || "")
+          .toLowerCase()
+          .includes("masuk")
+      );
+
+      const hasKeluarToday = todayAbsensi.some((item) =>
+        String(item?.category_absen || "")
+          .toLowerCase()
+          .includes("keluar") ||
+        String(item?.description || "")
+          .toLowerCase()
+          .includes("keluar")
+      );
+
+      const isLemburMasuk = isMasukType && hasMasukToday && hasKeluarToday;
+
+      // Pending:
+      // - luar radius (semua tipe)
+      // - lembur masuk (khusus absen masuk ketika sudah ada masuk+keluar hari ini)
+      const shouldPending = isOutsideRadius || isLemburMasuk;
+
+      formData.append(
+        "reason",
+        isLemburMasuk
+          ? "Lembur masuk (sudah ada absen masuk & keluar hari ini)"
+          : isOutsideRadius
+            ? "Absen di luar radius"
+            : ""
+      );
+      formData.append("is_approval", shouldPending ? 1 : 0);
       formData.append("photo_url", photo);
 
       const response = await axios.post(`${VITE_API_URL}/absensi/`, formData, {
