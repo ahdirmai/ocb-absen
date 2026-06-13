@@ -1,6 +1,7 @@
 require('dotenv').config();
 const PORT = process.env.PORT || 4000;
 const express = require('express');
+const path = require('path');
 const usersRoutes = require('./routes/users');
 const retailRoutes = require('./routes/retailManagement');
 const absenManagementRoutes = require('./routes/absenManagement');
@@ -27,7 +28,7 @@ app.use(morgan('dev'))
 // app.use(midllewareLogRequest)
 app.use(express.json())
 // app.use('/public', express.static(path.join(__dirname, 'public')));
-app.use('/assets', express.static('public/images'));
+app.use('/assets', express.static(path.resolve(__dirname, '../public/images')));
 app.use('/assets/profile', express.static('public/profile'));
 app.use('/assets/laporan', express.static('public/laporan'));
 // app.get('/', async (req, res, next)=>{

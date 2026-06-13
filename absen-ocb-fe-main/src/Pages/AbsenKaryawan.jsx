@@ -10,6 +10,70 @@ const VITE_API_URL = import.meta.env.VITE_API_URL;
 const initialLocation = { latitude: null, longitude: null };
 const buildAuthKey = (token, userId) => `${userId || ""}:${token || ""}`;
 
+const absenDirectionLabels = {
+  masuk: "Absen Masuk",
+  keluar: "Absen Keluar",
+};
+
+const getAbsenDirection = (item) => {
+  const description = String(item?.description || "").toLowerCase();
+
+  if (description.includes("keluar") || description.includes("pulang")) {
+    return "keluar";
+  }
+
+  if (description.includes("masuk")) {
+    return "masuk";
+  }
+
+  return "";
+};
+
+const isSameLocalDate = (dateValue, compareDate = new Date()) => {
+  if (!dateValue) {
+    return false;
+  }
+
+  const date = new Date(dateValue);
+
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  return (
+    date.getFullYear() === compareDate.getFullYear() &&
+    date.getMonth() === compareDate.getMonth() &&
+    date.getDate() === compareDate.getDate()
+  );
+};
+
+const isRejectedAttendance = (item) => {
+  const approvalStatus = String(item?.status_approval || "").toLowerCase();
+  return item?.status_approval === 3 || approvalStatus === "3" || approvalStatus.includes("tolak");
+};
+
+const buildTodayAttendanceStatus = (rows = []) => {
+  const status = { masuk: null, keluar: null };
+
+  rows.forEach((item) => {
+    const direction = getAbsenDirection(item);
+
+    if (!direction || !isSameLocalDate(item.absen_time)) {
+      return;
+    }
+
+    const current = status[direction];
+    const currentTime = current?.absen_time ? new Date(current.absen_time).getTime() : 0;
+    const itemTime = item.absen_time ? new Date(item.absen_time).getTime() : 0;
+
+    if (!current || itemTime > currentTime) {
+      status[direction] = item;
+    }
+  });
+
+  return status;
+};
+
 const AbsenKaryawan = () => {
   const [loading, setLoading] = useState(false);
   const [location, setLocation] = useState(initialLocation);
@@ -65,6 +129,16 @@ const AbsenKaryawan = () => {
     return { dalamRadius, jarak: Math.round(jarak), radius: Number(radius), retail_name };
   }, [hasLocation, location, selectedTypeDetail]);
 
+  const todayAttendanceStatus = useMemo(
+    () => buildTodayAttendanceStatus(history),
+    [history]
+  );
+
+  const currentAttemptDirection = getAbsenDirection(selectedTypeDetail);
+  const currentAttemptLabel = currentAttemptDirection
+    ? absenDirectionLabels[currentAttemptDirection]
+    : "Tipe absen belum dikenali";
+
   const stopCamera = () => {
     if (stream) {
       stream.getTracks().forEach((track) => track.stop());
@@ -94,13 +168,17 @@ const AbsenKaryawan = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (response.data.status === "success") {
-        setHistory(Array.isArray(response.data.data) ? response.data.data : []);
+        const historyData = Array.isArray(response.data.data) ? response.data.data : [];
+        setHistory(historyData);
+        return historyData;
       }
     } catch (error) {
       console.error("Error fetching history:", error);
     } finally {
       setHistoryLoading(false);
     }
+
+    return [];
   };
 
   const resetSession = () => {
@@ -191,7 +269,7 @@ const AbsenKaryawan = () => {
     );
   };
 
-  const fetchAbsenTypes = async (token, userId) => {
+  const fetchAbsenTypes = async (token, userId, historyRows = history) => {
     const authKey = buildAuthKey(token, userId);
 
     try {
@@ -208,18 +286,27 @@ const AbsenKaryawan = () => {
       if (response.data.status === "success") {
         const rawTypes = Array.isArray(response.data.data) ? response.data.data : [];
 
-        // Ambil status apakah sudah absen hari ini dari root response
-        const isAbsenToday = Number(response.data.is_absen_today) === 1;
+        const todayStatus = buildTodayAttendanceStatus(historyRows);
+        const doneDirections = new Set(
+          Object.entries(todayStatus)
+            .filter(([, item]) => item && !isRejectedAttendance(item))
+            .map(([direction]) => direction)
+        );
 
-        // Filter otomatis: Jika sudah absen masuk (isAbsenToday: 1), hanya tampilkan tipe "Keluar"
-        // Jika belum absen masuk (isAbsenToday: 0), hanya tampilkan tipe "Masuk"
+        // Fallback untuk response lama: jika backend hanya memberi is_absen_today,
+        // artikan absen masuk sudah tercatat sehingga user diarahkan ke absen keluar.
+        if (doneDirections.size === 0 && Number(response.data.is_absen_today) === 1) {
+          doneDirections.add("masuk");
+        }
+
         const filteredTypes = rawTypes.filter(type => {
-          const typeName = (type.name || "").toLowerCase();
-          const typeDesc = (type.description || "").toLowerCase();
-          const isMasuk = typeName.includes('masuk') || typeDesc.includes('masuk');
-          const isKeluar = typeName.includes('keluar') || typeDesc.includes('keluar');
+          const direction = getAbsenDirection(type);
 
-          return isAbsenToday ? isKeluar : isMasuk;
+          if (!direction || doneDirections.has(direction)) {
+            return false;
+          }
+
+          return doneDirections.has("masuk") ? direction === "keluar" : direction === "masuk";
         });
 
         setAbsenTypes(filteredTypes);
@@ -265,8 +352,8 @@ const AbsenKaryawan = () => {
         JSON.stringify(profileData || null)
       );
 
-      await fetchAbsenTypes(token, userId);
-      await fetchHistory(token, userId);
+      const historyData = await fetchHistory(token, userId);
+      await fetchAbsenTypes(token, userId, historyData);
     } catch (error) {
       console.error("Error fetching profile:", error);
 
@@ -505,8 +592,8 @@ const AbsenKaryawan = () => {
 
         setPhoto(null);
         setPhotoPreview(null);
-        await fetchAbsenTypes(authData.token, authData.userId);
-        await fetchHistory(authData.token, authData.userId);
+        const historyData = await fetchHistory(authData.token, authData.userId);
+        await fetchAbsenTypes(authData.token, authData.userId, historyData);
         requestLocation();
       } else {
         Swal.fire("Gagal", response.data.message || "Absen gagal.", "error");
@@ -703,6 +790,103 @@ const AbsenKaryawan = () => {
           </p>
         </div>
       )}
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gap: "10px",
+          marginBottom: "15px",
+        }}
+      >
+        {["masuk", "keluar"].map((direction) => {
+          const item = todayAttendanceStatus[direction];
+          const approvalStatus = String(item?.status_approval || "").toLowerCase();
+          const isPending =
+            item &&
+            (item.is_valid === 0 ||
+              item.is_valid === "0" ||
+              item.status_approval === 1 ||
+              item.status_approval === "1" ||
+              approvalStatus.includes("menunggu") ||
+              approvalStatus.includes("pending"));
+          const isRejected = item && isRejectedAttendance(item);
+          const statusLabel = !item
+            ? "Belum absen"
+            : isRejected
+              ? "Ditolak"
+              : isPending
+                ? "Menunggu approval"
+                : "Sudah absen";
+          const statusColor = !item
+            ? "#c0392b"
+            : isRejected
+              ? "#e74c3c"
+              : isPending
+                ? "#f39c12"
+                : "#27ae60";
+
+          return (
+            <div
+              key={direction}
+              style={{
+                background: item ? "#f8fffb" : "#fff7f7",
+                border: `1px solid ${statusColor}`,
+                borderRadius: "12px",
+                padding: "12px",
+              }}
+            >
+              <p style={{ margin: "0 0 6px", fontSize: "13px", color: "#555" }}>
+                Status Hari Ini
+              </p>
+              <p style={{ margin: "0 0 8px", fontWeight: "bold", color: "#2c3e50" }}>
+                {absenDirectionLabels[direction]}
+              </p>
+              <span
+                style={{
+                  display: "inline-block",
+                  padding: "4px 8px",
+                  borderRadius: "999px",
+                  background: statusColor,
+                  color: "#fff",
+                  fontSize: "12px",
+                  fontWeight: "bold",
+                }}
+              >
+                {statusLabel}
+              </span>
+              {item?.absen_time && (
+                <p style={{ margin: "8px 0 0", fontSize: "12px", color: "#555" }}>
+                  {format(new Date(item.absen_time), "HH:mm", { locale: localeId })}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div
+        style={{
+          background: currentAttemptDirection ? "#eef7ff" : "#f7f7f7",
+          border: currentAttemptDirection ? "1px solid #3498db" : "1px solid #ddd",
+          borderRadius: "12px",
+          padding: "14px",
+          marginBottom: "20px",
+        }}
+      >
+        <p style={{ margin: "0 0 6px", fontSize: "13px", color: "#555" }}>
+          Attempt Aktif
+        </p>
+        <p style={{ margin: "0 0 6px", fontWeight: "bold", color: currentAttemptDirection ? "#2471a3" : "#777" }}>
+          {selectedTypeDetail ? currentAttemptLabel : "Belum ada tipe absen yang dipilih"}
+        </p>
+        {selectedTypeDetail && (
+          <p style={{ margin: 0, fontSize: "13px", color: "#555" }}>
+            {selectedTypeDetail.description || "-"}
+            {selectedTypeDetail.retail_name ? ` - ${selectedTypeDetail.retail_name}` : ""}
+          </p>
+        )}
+      </div>
 
       <div
         style={{

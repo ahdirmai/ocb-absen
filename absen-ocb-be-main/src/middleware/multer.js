@@ -1,14 +1,18 @@
 const multer = require('multer');
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const app = express();
+
+const uploadDir = path.resolve(__dirname, '../../public/images');
+fs.mkdirSync(uploadDir, { recursive: true });
 
 
 
 //Konfigurasi penyimpanan file
 const storage = multer.diskStorage({
     destination : (req, file, cb)=>{
-        cb(null, 'public/images');
+        cb(null, uploadDir);
     }, 
     filename :(req, file, cb)=>{
         const timestamp = new Date().getTime();
