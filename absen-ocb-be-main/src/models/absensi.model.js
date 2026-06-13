@@ -92,7 +92,7 @@ const historyAbsensiPerUser = async (userId, body) => {
         SELECT 
             a.absensi_id, a.user_id, u.name AS nama_karyawan, a.absen_time, 
             a.retail_id, r.name AS retail_name, a.absen_type_id, a.photo_url,
-            ta.name AS category_absen, ta.description, ta.fee, a.reason, 
+            ta.name AS category_absen, ta.description, ta.start_time, ta.end_time, ta.kategori_absen, ta.fee, a.reason, 
             sa.description AS status, uap.name AS approval_by, ap.description_status AS status_approval, a.is_valid 
         FROM absensi a 
         JOIN user u ON u.user_id = a.user_id  
@@ -262,6 +262,66 @@ const cekAbesensiToday = async (user_id, absen_type_id) => {
     return results.length > 0 ? results[0] : null; 
 };
 
+const cekAbsensiTodayByTimeCategory = async (user_id, absen_type_id) => {
+    const [results] = await dbpool.query(
+        `SELECT a.*
+         FROM absensi a
+         JOIN tipe_absen existing_type ON existing_type.absen_id = a.absen_type_id
+         JOIN tipe_absen selected_type ON selected_type.absen_id = ?
+         WHERE a.user_id = ?
+           AND DATE(a.absen_time) = CURDATE()
+           AND (a.status_approval IS NULL OR a.status_approval <> 3)
+           AND (
+             a.absen_type_id = selected_type.absen_id
+             OR (
+               (
+                 (LOWER(selected_type.description) LIKE '%masuk%' AND LOWER(existing_type.description) LIKE '%masuk%')
+                 OR (
+                   (LOWER(selected_type.description) LIKE '%keluar%' OR LOWER(selected_type.description) LIKE '%pulang%')
+                   AND (LOWER(existing_type.description) LIKE '%keluar%' OR LOWER(existing_type.description) LIKE '%pulang%')
+                 )
+               )
+               AND (
+                 (
+                   selected_type.kategori_absen IS NOT NULL
+                   AND selected_type.kategori_absen <> ''
+                   AND existing_type.kategori_absen = selected_type.kategori_absen
+                 )
+                 OR (
+                   TIME(existing_type.start_time) = TIME(selected_type.start_time)
+                   AND TIME(existing_type.end_time) = TIME(selected_type.end_time)
+                 )
+               )
+             )
+           )
+         LIMIT 1`,
+        [absen_type_id, user_id]
+    );
+
+    return results.length > 0 ? results[0] : null;
+};
+
+const getTodayAttendanceDirectionSummary = async (user_id) => {
+    const [results] = await dbpool.query(
+        `SELECT
+            SUM(CASE WHEN LOWER(ta.description) LIKE '%masuk%' THEN 1 ELSE 0 END) AS total_masuk,
+            SUM(CASE WHEN LOWER(ta.description) LIKE '%keluar%' OR LOWER(ta.description) LIKE '%pulang%' THEN 1 ELSE 0 END) AS total_keluar
+         FROM absensi a
+         JOIN tipe_absen ta ON ta.absen_id = a.absen_type_id
+         WHERE a.user_id = ?
+           AND DATE(a.absen_time) = CURDATE()
+           AND (a.status_approval IS NULL OR a.status_approval <> 3)`,
+        [user_id]
+    );
+
+    const summary = results[0] || {};
+
+    return {
+        masuk: Number(summary.total_masuk || 0),
+        keluar: Number(summary.total_keluar || 0),
+    };
+};
+
 
 
 
@@ -337,6 +397,8 @@ module.exports={
     validasiAbsen,
     getPotonganLate,
     cekAbesensiToday,
+    cekAbsensiTodayByTimeCategory,
+    getTodayAttendanceDirectionSummary,
     getRekapKalenderUsers,
     getRekapKalenderAbsensi,
     getRekapKalenderOffday

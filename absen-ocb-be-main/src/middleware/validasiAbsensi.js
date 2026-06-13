@@ -43,6 +43,20 @@ const rejectValidation = (req, res, message) => {
   });
 };
 
+const appendReason = (currentReason, nextReason) => {
+  const reason = String(currentReason || "").trim();
+
+  if (!reason) {
+    return nextReason;
+  }
+
+  if (reason.toLowerCase().includes(nextReason.toLowerCase())) {
+    return reason;
+  }
+
+  return `${reason}; ${nextReason}`;
+};
+
 const checkAbsensi = async (req, res, next) => {
   const { absen_type_id, user_id, retail_id, latitude, longitude } = req.body;
 
@@ -62,16 +76,28 @@ const checkAbsensi = async (req, res, next) => {
   }
 
   try {
-    const cekAbsenToday = await absensiModel.cekAbesensiToday(
+    const cekAbsenToday = await absensiModel.cekAbsensiTodayByTimeCategory(
       user_id,
       absen_type_id
     );
+    const todayDirectionSummary =
+      await absensiModel.getTodayAttendanceDirectionSummary(user_id);
+    const hasCompletedRegularAttendance =
+      todayDirectionSummary.masuk > 0 && todayDirectionSummary.keluar > 0;
 
     if (cekAbsenToday) {
       return rejectValidation(
         req,
         res,
-        "Mohon Maaf Anda sudah Absen hari ini untuk tipe Absen ini"
+        "Mohon Maaf Anda sudah Absen hari ini untuk kategori waktu absen ini"
+      );
+    }
+
+    if (hasCompletedRegularAttendance) {
+      req.body.is_approval = 1;
+      req.body.reason = appendReason(
+        req.body.reason,
+        "Lembur - absen masuk dan keluar hari ini sudah tercatat"
       );
     }
 

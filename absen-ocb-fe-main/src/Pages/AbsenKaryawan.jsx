@@ -74,6 +74,135 @@ const buildTodayAttendanceStatus = (rows = []) => {
   return status;
 };
 
+const hasCompletedRegularAttendanceStatus = (status) =>
+  Boolean(
+    status.masuk &&
+      status.keluar &&
+      !isRejectedAttendance(status.masuk) &&
+      !isRejectedAttendance(status.keluar)
+  );
+
+const isOvertimeAttendance = (item) =>
+  String(item?.reason || "").toLowerCase().includes("lembur");
+
+const getTodayDirectionItems = (rows = [], direction) =>
+  rows
+    .filter(
+      (item) =>
+        getAbsenDirection(item) === direction && isSameLocalDate(item.absen_time)
+    )
+    .sort((a, b) => new Date(a.absen_time).getTime() - new Date(b.absen_time).getTime());
+
+const buildTimeCategoryKey = (item) => {
+  const kategoriAbsen = String(item?.kategori_absen || "").trim().toLowerCase();
+
+  if (kategoriAbsen) {
+    return `kategori:${kategoriAbsen}`;
+  }
+
+  const startTime = String(item?.start_time || "").trim();
+  const endTime = String(item?.end_time || "").trim();
+
+  if (startTime || endTime) {
+    return `time:${startTime}-${endTime}`;
+  }
+
+  return `type:${item?.absen_id || item?.absen_type_id || ""}`;
+};
+
+const hasTodayAttendanceForTimeCategory = (rows = [], type) =>
+  rows.some(
+    (item) => {
+      if (!isSameLocalDate(item.absen_time) || isRejectedAttendance(item)) {
+        return false;
+      }
+
+      if (String(item.absen_type_id) === String(type.absen_id)) {
+        return true;
+      }
+
+      return (
+        getAbsenDirection(item) === getAbsenDirection(type) &&
+        buildTimeCategoryKey(item) === buildTimeCategoryKey(type)
+      );
+    }
+  );
+
+const buildTodayOvertimeItems = (rows = []) => {
+  if (!hasCompletedRegularAttendanceStatus(buildTodayAttendanceStatus(rows))) {
+    return [];
+  }
+
+  const overtimeItems = [];
+  const seenIds = new Set();
+
+  ["masuk", "keluar"].forEach((direction) => {
+    const directionItems = getTodayDirectionItems(rows, direction);
+
+    directionItems.forEach((item, index) => {
+      if (index === 0 && !isOvertimeAttendance(item)) {
+        return;
+      }
+
+      const key = item.absensi_id || `${direction}-${item.absen_time}`;
+
+      if (!seenIds.has(key)) {
+        seenIds.add(key);
+        overtimeItems.push(item);
+      }
+    });
+  });
+
+  return overtimeItems.sort(
+    (a, b) => new Date(b.absen_time).getTime() - new Date(a.absen_time).getTime()
+  );
+};
+
+const getNextOvertimeDirection = (rows = []) => {
+  const overtimeItems = buildTodayOvertimeItems(rows);
+  const hasOvertimeMasuk = overtimeItems.some(
+    (item) => getAbsenDirection(item) === "masuk" && !isRejectedAttendance(item)
+  );
+  const hasOvertimeKeluar = overtimeItems.some(
+    (item) => getAbsenDirection(item) === "keluar" && !isRejectedAttendance(item)
+  );
+
+  if (!hasOvertimeMasuk) {
+    return "masuk";
+  }
+
+  if (!hasOvertimeKeluar) {
+    return "keluar";
+  }
+
+  return "masuk";
+};
+
+const getAttendanceStatusLabel = (item) => {
+  if (!item) {
+    return "Belum absen";
+  }
+
+  const approvalStatus = String(item.status_approval || "").toLowerCase();
+
+  if (isRejectedAttendance(item)) {
+    return "Ditolak";
+  }
+
+  if (
+    item.is_valid === 0 ||
+    item.is_valid === "0" ||
+    item.status_approval === 1 ||
+    item.status_approval === "1" ||
+    approvalStatus.includes("menunggu") ||
+    approvalStatus.includes("pending")
+  ) {
+    return "Menunggu approval";
+  }
+
+  return "Sudah absen";
+};
+
 const AbsenKaryawan = () => {
   const [loading, setLoading] = useState(false);
   const [location, setLocation] = useState(initialLocation);
@@ -134,7 +263,25 @@ const AbsenKaryawan = () => {
     [history]
   );
 
+  const hasCompletedRegularAttendance = hasCompletedRegularAttendanceStatus(
+    todayAttendanceStatus
+  );
+
+  const todayOvertimeItems = useMemo(
+    () => buildTodayOvertimeItems(history),
+    [history]
+  );
+
   const currentAttemptDirection = getAbsenDirection(selectedTypeDetail);
+  const currentAttemptBaseAttendance = currentAttemptDirection
+    ? todayAttendanceStatus[currentAttemptDirection]
+    : null;
+  const isOvertimeAttempt = Boolean(
+    hasCompletedRegularAttendance &&
+    currentAttemptDirection &&
+      currentAttemptBaseAttendance &&
+      !isRejectedAttendance(currentAttemptBaseAttendance)
+  );
   const currentAttemptLabel = currentAttemptDirection
     ? absenDirectionLabels[currentAttemptDirection]
     : "Tipe absen belum dikenali";
@@ -287,6 +434,7 @@ const AbsenKaryawan = () => {
         const rawTypes = Array.isArray(response.data.data) ? response.data.data : [];
 
         const todayStatus = buildTodayAttendanceStatus(historyRows);
+        const hasCompletedRegularDay = hasCompletedRegularAttendanceStatus(todayStatus);
         const doneDirections = new Set(
           Object.entries(todayStatus)
             .filter(([, item]) => item && !isRejectedAttendance(item))
@@ -299,15 +447,46 @@ const AbsenKaryawan = () => {
           doneDirections.add("masuk");
         }
 
-        const filteredTypes = rawTypes.filter(type => {
-          const direction = getAbsenDirection(type);
+        const nextRegularDirection = !doneDirections.has("masuk")
+          ? "masuk"
+          : !doneDirections.has("keluar")
+            ? "keluar"
+            : "";
+        const nextOvertimeDirection = hasCompletedRegularDay
+          ? getNextOvertimeDirection(historyRows)
+          : "";
 
-          if (!direction || doneDirections.has(direction)) {
-            return false;
-          }
+        const filteredTypes = rawTypes
+          .filter((type) => {
+            const direction = getAbsenDirection(type);
 
-          return doneDirections.has("masuk") ? direction === "keluar" : direction === "masuk";
-        });
+            if (!direction) {
+              return false;
+            }
+
+            if (hasTodayAttendanceForTimeCategory(historyRows, type)) {
+              return false;
+            }
+
+            return direction === (hasCompletedRegularDay ? nextOvertimeDirection : nextRegularDirection);
+          })
+          .sort((a, b) => {
+            const directionA = getAbsenDirection(a);
+            const directionB = getAbsenDirection(b);
+            const priorityDirection = hasCompletedRegularDay
+              ? nextOvertimeDirection
+              : nextRegularDirection;
+
+            if (directionA === priorityDirection && directionB !== priorityDirection) {
+              return -1;
+            }
+
+            if (directionB === priorityDirection && directionA !== priorityDirection) {
+              return 1;
+            }
+
+            return 0;
+          });
 
         setAbsenTypes(filteredTypes);
 
@@ -562,6 +741,22 @@ const AbsenKaryawan = () => {
       return;
     }
 
+    if (isOvertimeAttempt) {
+      const confirmation = await Swal.fire({
+        title: "Konfirmasi Lembur",
+        text: `${currentAttemptLabel} lembur akan memakai tipe absen dengan deskripsi ${currentAttemptDirection}. Absen ini perlu approval atasan. Lanjutkan?`,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Ya, submit lembur",
+        cancelButtonText: "Batal",
+        confirmButtonColor: "#f39c12",
+      });
+
+      if (!confirmation.isConfirmed) {
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
@@ -572,8 +767,18 @@ const AbsenKaryawan = () => {
       formData.append("latitude", String(location.latitude));
       formData.append("longitude", String(location.longitude));
       const isOutsideRadius = locationStatus ? !locationStatus.dalamRadius : false;
-      formData.append("reason", isOutsideRadius ? "Absen di luar radius" : "");
-      formData.append("is_approval", isOutsideRadius ? 1 : 0);
+      const reasonParts = [];
+
+      if (isOutsideRadius) {
+        reasonParts.push("Absen di luar radius");
+      }
+
+      if (isOvertimeAttempt) {
+        reasonParts.push(`Lembur - sudah ada ${currentAttemptLabel} hari ini`);
+      }
+
+      formData.append("reason", reasonParts.join("; "));
+      formData.append("is_approval", isOutsideRadius || isOvertimeAttempt ? 1 : 0);
       formData.append("photo_url", photo);
 
       const response = await axios.post(`${VITE_API_URL}/absensi/`, formData, {
@@ -584,7 +789,13 @@ const AbsenKaryawan = () => {
       });
 
       if (response.data.status === "success") {
-        Swal.fire("Berhasil!", "Absen berhasil disimpan.", "success");
+        Swal.fire(
+          "Berhasil!",
+          isOvertimeAttempt
+            ? "Absen lembur berhasil dikirim dan menunggu approval."
+            : "Absen berhasil disimpan.",
+          "success"
+        );
 
         if (photoPreview?.startsWith("blob:")) {
           URL.revokeObjectURL(photoPreview);
@@ -801,23 +1012,12 @@ const AbsenKaryawan = () => {
       >
         {["masuk", "keluar"].map((direction) => {
           const item = todayAttendanceStatus[direction];
-          const approvalStatus = String(item?.status_approval || "").toLowerCase();
-          const isPending =
-            item &&
-            (item.is_valid === 0 ||
-              item.is_valid === "0" ||
-              item.status_approval === 1 ||
-              item.status_approval === "1" ||
-              approvalStatus.includes("menunggu") ||
-              approvalStatus.includes("pending"));
+          const statusLabel = getAttendanceStatusLabel(item);
           const isRejected = item && isRejectedAttendance(item);
-          const statusLabel = !item
-            ? "Belum absen"
-            : isRejected
-              ? "Ditolak"
-              : isPending
-                ? "Menunggu approval"
-                : "Sudah absen";
+          const isPending = statusLabel === "Menunggu approval";
+          const hasOvertime = todayOvertimeItems.some(
+            (overtimeItem) => getAbsenDirection(overtimeItem) === direction
+          );
           const statusColor = !item
             ? "#c0392b"
             : isRejected
@@ -860,30 +1060,58 @@ const AbsenKaryawan = () => {
                   {format(new Date(item.absen_time), "HH:mm", { locale: localeId })}
                 </p>
               )}
+              {hasOvertime && (
+                <p style={{ margin: "6px 0 0", fontSize: "12px", color: "#d35400", fontWeight: "bold" }}>
+                  Ada data lembur
+                </p>
+              )}
             </div>
           );
         })}
       </div>
 
+      {todayOvertimeItems.length > 0 && (
+        <div
+          style={{
+            background: "#fff4e5",
+            border: "1px solid #f39c12",
+            borderRadius: "12px",
+            padding: "14px",
+            marginBottom: "15px",
+          }}
+        >
+          <p style={{ margin: "0 0 6px", fontWeight: "bold", color: "#d35400" }}>
+            Sedang Lembur
+          </p>
+          <p style={{ margin: 0, fontSize: "13px", color: "#7f4f00" }}>
+            Ada {todayOvertimeItems.length} data lembur hari ini. Status terbaru: {getAttendanceStatusLabel(todayOvertimeItems[0])}
+            {todayOvertimeItems[0]?.absen_time
+              ? ` pukul ${format(new Date(todayOvertimeItems[0].absen_time), "HH:mm", { locale: localeId })}`
+              : ""}
+            .
+          </p>
+        </div>
+      )}
+
       <div
         style={{
-          background: currentAttemptDirection ? "#eef7ff" : "#f7f7f7",
-          border: currentAttemptDirection ? "1px solid #3498db" : "1px solid #ddd",
+          background: isOvertimeAttempt ? "#fff4e5" : currentAttemptDirection ? "#eef7ff" : "#f7f7f7",
+          border: isOvertimeAttempt
+            ? "1px solid #f39c12"
+            : currentAttemptDirection
+              ? "1px solid #3498db"
+              : "1px solid #ddd",
           borderRadius: "12px",
           padding: "14px",
           marginBottom: "20px",
         }}
       >
-        <p style={{ margin: "0 0 6px", fontSize: "13px", color: "#555" }}>
-          Attempt Aktif
+        <p style={{ margin: 0, fontWeight: "bold", color: isOvertimeAttempt ? "#d35400" : currentAttemptDirection ? "#2471a3" : "#777" }}>
+          {isOvertimeAttempt ? "Attempt Lembur" : "Attempt Aktif"}: {selectedTypeDetail ? currentAttemptLabel : "Belum ada tipe absen yang dipilih"}
         </p>
-        <p style={{ margin: "0 0 6px", fontWeight: "bold", color: currentAttemptDirection ? "#2471a3" : "#777" }}>
-          {selectedTypeDetail ? currentAttemptLabel : "Belum ada tipe absen yang dipilih"}
-        </p>
-        {selectedTypeDetail && (
-          <p style={{ margin: 0, fontSize: "13px", color: "#555" }}>
-            {selectedTypeDetail.description || "-"}
-            {selectedTypeDetail.retail_name ? ` - ${selectedTypeDetail.retail_name}` : ""}
+        {isOvertimeAttempt && (
+          <p style={{ margin: "8px 0 0", fontSize: "13px", color: "#d35400", fontWeight: "bold" }}>
+            Akan dihitung lembur dan perlu approval atasan.
           </p>
         )}
       </div>
@@ -918,11 +1146,15 @@ const AbsenKaryawan = () => {
         <p
           style={{
             margin: "5px 0",
-            color: selectedAbsenType ? "green" : "red",
+            color: isOvertimeAttempt ? "#d35400" : selectedAbsenType ? "green" : "red",
           }}
         >
           {selectedAbsenType ? "Siap" : "Belum"} Tipe Absen{" "}
-          {selectedAbsenType ? "(Sudah dipilih)" : "(Belum dipilih)"}
+          {isOvertimeAttempt
+            ? "(Lembur, perlu approval)"
+            : selectedAbsenType
+              ? "(Sudah dipilih)"
+              : "(Belum dipilih)"}
         </p>
         {locationError && (
           <p style={{ margin: "8px 0 0", color: "#c0392b" }}>{locationError}</p>
@@ -966,16 +1198,27 @@ const AbsenKaryawan = () => {
           }}
         >
           <option value="" disabled>-- Pilih Tipe Absen --</option>
-          {absenTypes.map((type) => (
-            <option key={type.absen_id} value={type.absen_id}>
-              {type.name}
-              {type.retail_name ? ` - ${type.retail_name}` : ""}
-            </option>
-          ))}
+          {absenTypes.map((type) => {
+            const direction = getAbsenDirection(type);
+            const isOvertimeOption = Boolean(
+              hasCompletedRegularAttendance &&
+              direction &&
+                todayAttendanceStatus[direction] &&
+                !isRejectedAttendance(todayAttendanceStatus[direction])
+            );
+
+            return (
+              <option key={type.absen_id} value={type.absen_id}>
+                {type.name}
+                {type.retail_name ? ` - ${type.retail_name}` : ""}
+                {isOvertimeOption ? " (Lembur)" : ""}
+              </option>
+            );
+          })}
         </select>
         {absenTypes.length === 0 && (
           <p style={{ marginTop: "8px", color: "#c0392b", fontSize: "14px" }}>
-            Tipe absen untuk shift ini sudah selesai atau belum ditemukan.
+            Tipe absen untuk shift ini belum ditemukan.
           </p>
         )}
       </div>

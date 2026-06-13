@@ -47,6 +47,9 @@ const createAbsensi = async (req, res) => {
     const getUpline = await absensiModel.getUpline(body.user_id);
     const getPotonganLate = await absensiModel.getPotonganLate(idPotongan);
     const upline = getUpline?.upline || null;
+    const isOvertime = String(body.reason || "")
+      .toLowerCase()
+      .includes("lembur");
 
     if (!getTimeDB) {
       removeUploadedImage(file.filename);
@@ -122,6 +125,7 @@ const createAbsensi = async (req, res) => {
         status_absen,
         status_approval,
         potongan,
+        is_overtime: isOvertime ? 1 : 0,
       },
     });
   } catch (error) {
