@@ -13,5 +13,8 @@ router.get('/total-fee', authenticateToken, summaryController.getTotalFee );
 
 router.get('/total-feedaily', authenticateToken, summaryController.getTotalFeeDaily );
 
+router.get('/top-ontime', summaryController.getTopOntimeMonthly );
+router.get('/top-late', summaryController.getTopLateMonthly );
+
 
 module.exports = router

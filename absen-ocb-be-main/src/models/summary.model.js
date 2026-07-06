@@ -56,9 +56,54 @@ const getTotalFee = async () => {
     return dbpool.execute(SQLQuery);
   };
 
+// bulan format 'MM-YYYY'. null => bulan berjalan
+const buildTopMonthlyQuery = (statusAbsen, bulan) => {
+  let periodClause;
+  const params = [statusAbsen];
+
+  if (bulan) {
+    const [mm, yyyy] = bulan.split('-');
+    periodClause = ` AND MONTH(a.absen_time) = ? AND YEAR(a.absen_time) = ?`;
+    params.push(mm, yyyy);
+  } else {
+    periodClause = ` AND MONTH(a.absen_time) = MONTH(CURDATE())
+                     AND YEAR(a.absen_time) = YEAR(CURDATE())`;
+  }
+
+  const SQLQuery = `SELECT
+                      u.user_id,
+                      u.name AS nama,
+                      r.name AS retail_name,
+                      COUNT(a.absensi_id) AS jumlah
+                    FROM absensi a
+                    JOIN user u ON u.user_id = a.user_id
+                    JOIN retail r ON r.retail_id = a.retail_id
+                    JOIN tipe_absen ta ON ta.absen_id = a.absen_type_id
+                    WHERE a.status_absen = ?
+                      AND ta.description LIKE 'Absen Masuk%'
+                      ${periodClause}
+                    GROUP BY u.user_id, u.name, r.name
+                    ORDER BY jumlah DESC, u.name ASC
+                    LIMIT 10`;
+
+  return { SQLQuery, params };
+};
+
+const getTopOntimeMonthly = async (bulan) => {
+  const { SQLQuery, params } = buildTopMonthlyQuery('1', bulan);
+  return dbpool.execute(SQLQuery, params);
+};
+
+const getTopLateMonthly = async (bulan) => {
+  const { SQLQuery, params } = buildTopMonthlyQuery('2', bulan);
+  return dbpool.execute(SQLQuery, params);
+};
+
 module.exports = {
   getTottalDaily,
   getTotalFee,
   getChartTotalAbsensi,
-  getTotalFeeDaily
+  getTotalFeeDaily,
+  getTopOntimeMonthly,
+  getTopLateMonthly
 };

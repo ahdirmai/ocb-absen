@@ -92,9 +92,77 @@ const getTotalFeeDaily = async(req, res) =>{
 
 
 
+const BULAN_REGEX = /^(0[1-9]|1[0-2])-\d{4}$/;
+
+const parseBulan = (bulan) => {
+    if (bulan === undefined) return { bulan: null };
+    if (!BULAN_REGEX.test(bulan)) return { error: true };
+    return { bulan };
+};
+
+const getTopOntimeMonthly = async(req, res) =>{
+    try{
+        const { bulan, error } = parseBulan(req.query.bulan);
+        if (error) {
+            return res.status(400).json({
+                message : "Format bulan tidak valid. Gunakan MM-YYYY",
+                status : 'failed',
+                status_code : '400',
+            });
+        }
+        const [rows] = await summaryModel.getTopOntimeMonthly(bulan);
+        const data = rows.map((row, index) => ({
+            ranking: index + 1,
+            nama: row.nama,
+            retail: row.retail_name,
+            jumlah: Number(row.jumlah),
+        }));
+        res.json({ data })
+    }
+    catch(error){
+        res.status(500).json({
+            message : "Internal Server Error",
+            status : 'failed',
+            status_code : '500',
+            serverMessage : error,
+        })
+    }
+}
+
+const getTopLateMonthly = async(req, res) =>{
+    try{
+        const { bulan, error } = parseBulan(req.query.bulan);
+        if (error) {
+            return res.status(400).json({
+                message : "Format bulan tidak valid. Gunakan MM-YYYY",
+                status : 'failed',
+                status_code : '400',
+            });
+        }
+        const [rows] = await summaryModel.getTopLateMonthly(bulan);
+        const data = rows.map((row, index) => ({
+            ranking: index + 1,
+            nama: row.nama,
+            retail: row.retail_name,
+            jumlah: Number(row.jumlah),
+        }));
+        res.json({ data })
+    }
+    catch(error){
+        res.status(500).json({
+            message : "Internal Server Error",
+            status : 'failed',
+            status_code : '500',
+            serverMessage : error,
+        })
+    }
+}
+
 module.exports={
     getTottalDaily,
     getTotalFee,
     getChartTotalAbsensi,
-    getTotalFeeDaily
+    getTotalFeeDaily,
+    getTopOntimeMonthly,
+    getTopLateMonthly
 }
