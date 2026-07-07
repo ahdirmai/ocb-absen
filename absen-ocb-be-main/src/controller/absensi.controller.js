@@ -61,6 +61,27 @@ const createAbsensi = async (req, res) => {
       });
     }
 
+    const selectedDesc = String(getTimeDB.description || "").toLowerCase();
+    const selectedName = String(getTimeDB.name || "").toLowerCase();
+    const isKeluar =
+      selectedDesc.includes("keluar") || selectedDesc.includes("pulang");
+    const isSubuh = selectedName.includes("subuh");
+
+    if (isKeluar && !isSubuh) {
+      const todaySummary =
+        await absensiModel.getTodayAttendanceDirectionSummary(body.user_id);
+
+      if (todaySummary.masuk < 1) {
+        removeUploadedImage(file.filename);
+
+        return res.status(400).json({
+          message: "Tidak bisa absen keluar sebelum absen masuk hari ini.",
+          status: "failed",
+          status_code: "400",
+        });
+      }
+    }
+
     const startTimeDBMoment = moment
       .tz(getTimeDB.start_time, "HH:mm:ss", timezone)
       .format("HH:mm:ss");
