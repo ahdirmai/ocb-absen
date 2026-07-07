@@ -209,6 +209,7 @@ const AbsenKaryawan = () => {
   const [locationError, setLocationError] = useState("");
   const [photo, setPhoto] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
+  const [note, setNote] = useState("");
   const [absenTypes, setAbsenTypes] = useState([]);
   const [selectedAbsenType, setSelectedAbsenType] = useState("");
   const [userProfile, setUserProfile] = useState(null);
@@ -777,6 +778,11 @@ const AbsenKaryawan = () => {
         reasonParts.push(`Lembur - sudah ada ${currentAttemptLabel} hari ini`);
       }
 
+      const trimmedNote = note.trim();
+      if (trimmedNote) {
+        reasonParts.push(`Catatan: ${trimmedNote}`);
+      }
+
       formData.append("reason", reasonParts.join("; "));
       formData.append("is_approval", isOutsideRadius || isOvertimeAttempt ? 1 : 0);
       formData.append("photo_url", photo);
@@ -803,6 +809,7 @@ const AbsenKaryawan = () => {
 
         setPhoto(null);
         setPhotoPreview(null);
+        setNote("");
         const historyData = await fetchHistory(authData.token, authData.userId);
         await fetchAbsenTypes(authData.token, authData.userId, historyData);
         requestLocation();
@@ -1304,6 +1311,34 @@ const AbsenKaryawan = () => {
         )}
 
         <canvas ref={canvasRef} style={{ display: "none" }} />
+      </div>
+
+      <div style={{ marginBottom: "20px" }}>
+        <label
+          style={{ display: "block", marginBottom: "5px", fontWeight: "bold" }}
+        >
+          Catatan (opsional):
+        </label>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Tulis catatan untuk absen ini..."
+          rows={3}
+          maxLength={255}
+          style={{
+            width: "100%",
+            padding: "12px",
+            borderRadius: "5px",
+            border: "1px solid #ddd",
+            fontSize: "16px",
+            resize: "vertical",
+            fontFamily: "inherit",
+            boxSizing: "border-box",
+          }}
+        />
+        <p style={{ margin: "4px 0 0", textAlign: "right", color: "#888", fontSize: "12px" }}>
+          {note.length}/255
+        </p>
       </div>
 
       <button
