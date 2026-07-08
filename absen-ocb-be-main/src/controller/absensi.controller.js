@@ -62,20 +62,25 @@ const createAbsensi = async (req, res) => {
     }
 
     const selectedDesc = String(getTimeDB.description || "").toLowerCase();
-    const selectedName = String(getTimeDB.name || "").toLowerCase();
     const isKeluar =
       selectedDesc.includes("keluar") || selectedDesc.includes("pulang");
-    const isSubuh = selectedName.includes("subuh");
+    // Keluar dini hari (< 12:00) = shift cross-midnight (SORE 9 JAM, SUBUH),
+    // masuk-nya tercatat kemarin. Cek masuk hari ini ATAU kemarin.
+    const isEarlyMorningKeluar =
+      timeAbsenMoment.format("HH:mm:ss") < "12:00:00";
 
-    if (isKeluar && !isSubuh) {
-      const todaySummary =
-        await absensiModel.getTodayAttendanceDirectionSummary(body.user_id);
+    if (isKeluar) {
+      const masukCount = isEarlyMorningKeluar
+        ? (await absensiModel.getMasukCountIncludingYesterday(body.user_id))
+            .masuk
+        : (await absensiModel.getTodayAttendanceDirectionSummary(body.user_id))
+            .masuk;
 
-      if (todaySummary.masuk < 1) {
+      if (masukCount < 1) {
         removeUploadedImage(file.filename);
 
         return res.status(400).json({
-          message: "Tidak bisa absen keluar sebelum absen masuk hari ini.",
+          message: "Tidak bisa absen keluar sebelum absen masuk.",
           status: "failed",
           status_code: "400",
         });

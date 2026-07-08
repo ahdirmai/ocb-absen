@@ -322,6 +322,27 @@ const getTodayAttendanceDirectionSummary = async (user_id) => {
     };
 };
 
+// Hitung absen masuk hari ini + kemarin, untuk shift cross-midnight
+// (mis. SORE 9 JAM masuk 16:00, keluar 01:00 keesokan harinya)
+const getMasukCountIncludingYesterday = async (user_id) => {
+    const [results] = await dbpool.query(
+        `SELECT
+            SUM(CASE WHEN LOWER(ta.description) LIKE '%masuk%' THEN 1 ELSE 0 END) AS total_masuk
+         FROM absensi a
+         JOIN tipe_absen ta ON ta.absen_id = a.absen_type_id
+         WHERE a.user_id = ?
+           AND DATE(a.absen_time) >= (CURDATE() - INTERVAL 1 DAY)
+           AND (a.status_approval IS NULL OR a.status_approval <> 3)`,
+        [user_id]
+    );
+
+    const summary = results[0] || {};
+
+    return {
+        masuk: Number(summary.total_masuk || 0),
+    };
+};
+
 
 
 
@@ -399,6 +420,7 @@ module.exports={
     cekAbesensiToday,
     cekAbsensiTodayByTimeCategory,
     getTodayAttendanceDirectionSummary,
+    getMasukCountIncludingYesterday,
     getRekapKalenderUsers,
     getRekapKalenderAbsensi,
     getRekapKalenderOffday
