@@ -125,7 +125,11 @@ const checkAbsensi = async (req, res, next) => {
       );
 
       if (jarak > Number(retail.radius)) {
-        req.body.is_approval = 1;
+        return rejectValidation(
+          req,
+          res,
+          "Anda berada di luar radius lokasi absen. Absen tidak dapat dilakukan."
+        );
       }
     }
 

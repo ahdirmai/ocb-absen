@@ -15,6 +15,11 @@
   - `GET /api/migration/shifts` — semua shift + employees[], `start_date`/`end_date` format `YYYY-MM-DD`
   - `GET /api/migration/absen-categories` — semua tipe absen termasuk soft-deleted
 
+### Changed
+- **Validasi radius absen** — absen di luar radius retail sekarang diblokir (HTTP 400), sebelumnya hanya ditandai `is_approval=1`
+  - Berlaku hanya jika retail punya `latitude`, `longitude`, dan `radius`; retail tanpa data lokasi tetap lolos
+  - Pesan: `"Anda berada di luar radius lokasi absen. Absen tidak dapat dilakukan."`
+
 ### Fixed
 - Migration `/shifts` — `start_date`/`end_date` pakai `DATE_FORMAT` agar tidak ada timezone offset dari Node.js driver
 - Migration `/retail` — expose semua retail (termasuk `is_deleted=1`) agar referensi dari shifting tidak orphan
