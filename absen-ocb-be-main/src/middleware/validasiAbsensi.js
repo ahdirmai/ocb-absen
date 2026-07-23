@@ -172,7 +172,7 @@ const checkAbsensi = async (req, res, next) => {
         req.body.is_approval = 1;
         req.body.reason = appendReason(
           req.body.reason,
-          `Absen di luar radius retail asal, terdeteksi dekat ${nearbyRetail.name}`
+          "Anda absen di luar radius, menunggu approval atasan"
         );
       }
     }
