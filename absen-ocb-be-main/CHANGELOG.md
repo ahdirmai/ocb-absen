@@ -23,6 +23,9 @@
   - Ditolak hanya jika di luar radius retail asal DAN tidak dekat OC/Store manapun
 
 ### Fixed
+- **Sinkronisasi `is_valid` dengan approval** — approve absen sekarang set `is_valid=1`, reject set `is_valid=0`
+  - Sebelumnya `approveAbsen`/`rejectAbsen` hanya ubah `status_approval`, `is_valid` tetap 0 sehingga absen approved masih tampil "Menunggu approval" di FE
+  - Approve → valid; reject → invalid dan user bisa absen ulang kategori waktu yang sama (dup-check exclude `status_approval=3`)
 - Migration `/shifts` — `start_date`/`end_date` pakai `DATE_FORMAT` agar tidak ada timezone offset dari Node.js driver
 - Migration `/retail` — expose semua retail (termasuk `is_deleted=1`) agar referensi dari shifting tidak orphan
 - Rekap kalender — date extraction pakai `moment.tz(Asia/Makassar)` agar tidak shift 1 hari akibat UTC conversion

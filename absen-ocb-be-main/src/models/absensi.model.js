@@ -63,12 +63,12 @@ const getPotonganLate = async (idPotongan) => {
 }
 
 const approveAbsen =(approved_at, absenId)=>{
-    const SQLQuery = `UPDATE  absensi set status_approval=2, approved_at ='${approved_at}' WHERE absensi_id =${absenId}`;
+    const SQLQuery = `UPDATE  absensi set status_approval=2, is_valid=1, approved_at ='${approved_at}' WHERE absensi_id =${absenId}`;
 
     return dbpool.execute(SQLQuery);
 }
 const rejectAbsen =(approved_at, absenId)=>{
-    const SQLQuery = `UPDATE  absensi set status_approval=3, approved_at ='${approved_at}' WHERE absensi_id =${absenId}`;
+    const SQLQuery = `UPDATE  absensi set status_approval=3, is_valid=0, approved_at ='${approved_at}' WHERE absensi_id =${absenId}`;
 
     return dbpool.execute(SQLQuery);
 }
