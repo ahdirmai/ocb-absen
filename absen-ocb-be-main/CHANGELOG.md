@@ -19,6 +19,8 @@
 - **Validasi radius absen** — absen di luar radius retail sekarang diblokir (HTTP 400), sebelumnya hanya ditandai `is_approval=1`
   - Berlaku hanya jika retail punya `latitude`, `longitude`, dan `radius`; retail tanpa data lokasi tetap lolos
   - Pesan: `"Anda berada di luar radius lokasi absen. Absen tidak dapat dilakukan."`
+  - **Pengecualian OC/Store terdekat** — jika di luar radius retail asal tetapi masih dalam radius OC/Store lain yang aktif, absen tetap diizinkan dengan `is_approval=1` dan `reason` mencatat nama store terdekat
+  - Ditolak hanya jika di luar radius retail asal DAN tidak dekat OC/Store manapun
 
 ### Fixed
 - Migration `/shifts` — `start_date`/`end_date` pakai `DATE_FORMAT` agar tidak ada timezone offset dari Node.js driver

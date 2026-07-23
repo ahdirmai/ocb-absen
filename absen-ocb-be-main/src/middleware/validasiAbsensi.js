@@ -20,6 +20,36 @@ function hitungJarak(lat1, lon1, lat2, lon2) {
 const isBlank = (value) =>
   value === undefined || value === null || String(value).trim() === "";
 
+const findNearbyRetail = async (latitude, longitude, excludeRetailId) => {
+  const [retailers] = await dbpool.query(
+    "SELECT retail_id, name, latitude, longitude, radius FROM retail WHERE is_deleted = 0 AND is_active = 1 AND retail_id != ?",
+    [excludeRetailId]
+  );
+
+  for (const candidate of retailers) {
+    if (
+      isBlank(candidate.latitude) ||
+      isBlank(candidate.longitude) ||
+      isBlank(candidate.radius)
+    ) {
+      continue;
+    }
+
+    const jarak = hitungJarak(
+      latitude,
+      longitude,
+      Number(candidate.latitude),
+      Number(candidate.longitude)
+    );
+
+    if (jarak <= Number(candidate.radius)) {
+      return candidate;
+    }
+  }
+
+  return null;
+};
+
 const removeUploadedImage = (filename) => {
   if (!filename) {
     return;
@@ -125,10 +155,24 @@ const checkAbsensi = async (req, res, next) => {
       );
 
       if (jarak > Number(retail.radius)) {
-        return rejectValidation(
-          req,
-          res,
-          "Anda berada di luar radius lokasi absen. Absen tidak dapat dilakukan."
+        const nearbyRetail = await findNearbyRetail(
+          latitudeNumber,
+          longitudeNumber,
+          retail_id
+        );
+
+        if (!nearbyRetail) {
+          return rejectValidation(
+            req,
+            res,
+            "Anda berada di luar radius lokasi absen dan tidak dekat dengan OC/Store manapun. Absen tidak dapat dilakukan."
+          );
+        }
+
+        req.body.is_approval = 1;
+        req.body.reason = appendReason(
+          req.body.reason,
+          `Absen di luar radius retail asal, terdeteksi dekat ${nearbyRetail.name}`
         );
       }
     }

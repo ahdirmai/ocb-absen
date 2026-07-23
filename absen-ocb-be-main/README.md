@@ -48,7 +48,7 @@ node src/index.js
 | POST | `/api/absensi/reject-absensi/:absenId` | Reject absensi |
 | POST | `/api/absensi/validasi/:absenId` | Validasi absensi |
 
-> **Validasi radius:** Absen ditolak (HTTP 400) jika lokasi GPS di luar `radius` retail. Hanya aktif bila retail punya `latitude`, `longitude`, dan `radius`.
+> **Validasi radius:** Absen ditolak (HTTP 400) jika lokasi GPS di luar `radius` retail. Hanya aktif bila retail punya `latitude`, `longitude`, dan `radius`. Pengecualian: jika di luar radius retail asal tapi masih dalam radius OC/Store lain yang aktif, absen diizinkan dengan `is_approval=1`.
 
 ### Migration (X-Migration-Key required)
 | Method | URL | Keterangan |
