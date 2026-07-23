@@ -86,42 +86,102 @@ const createNewGroupAbsen = async (groupDetails) => {
   return result;
 };
 
-const getTypeAbsenPerShift = async (userId) => {
+// Kategori user yang memakai jadwal shift harian: Sales Toko (18) & Trainee Sales Toko (21).
+const SHIFT_SCHEDULED_CATEGORIES = [18, 21];
+
+// Query lama: tipe absen berdasarkan kategori user + shift range aktif (untuk kategori non-sales / fallback).
+const getTypeAbsenByCategory = async (userId) => {
   const SQLQuery = `SELECT DISTINCT
-    t.absen_id, 
-    t.name, 
-    t.description, 
-    r.retail_id, 
+    t.absen_id,
+    t.name,
+    t.description,
+    r.retail_id,
     r.name as retail_name,
-    r.latitude, 
-    r.longitude, 
-    r.radius, 
-    t.start_time, 
-    t.end_time, 
+    r.latitude,
+    r.longitude,
+    r.radius,
+    t.start_time,
+    t.end_time,
     ga.id_category as group_absen,
 case when a.absensi_id is not null then 1 else 0 end as is_absen_today,
 t.kategori_absen
-FROM 
+FROM
     shifting s
-JOIN 
+JOIN
     shift_employes se ON se.shifting_id = s.shifting_id AND s.is_deleted=0
-JOIN 
+JOIN
     user u ON u.user_id = se.user_id
-JOIN 
-    group_absen ga 
+JOIN
+    group_absen ga
     ON (ga.id_category = u.category_user OR ga.id_category = 0)
-JOIN 
+JOIN
     tipe_absen t ON t.absen_id = ga.absen_type_id AND t.is_deleted=0
-JOIN 
+JOIN
     retail r ON r.retail_id = s.retail_id
-LEFT JOIN 
+LEFT JOIN
   (select absensi_id, absen_type_id, user_id from absensi where absen_time >= CURDATE() AND is_valid=1 ) a on a.absen_type_id = t.absen_id AND a.user_id = u.user_id
-WHERE 
-    se.user_id = ? 
-    AND s.start_date <= CURDATE() 
+WHERE
+    se.user_id = ?
+    AND s.start_date <= CURDATE()
     AND s.end_date >= CURDATE()
 ORDER BY t.name ASC`;
   return dbpool.execute(SQLQuery, [userId]);
+};
+
+// Query jadwal harian: tipe absen dari retail + kategori_absen yang di-assign admin untuk user pada CURDATE().
+const getTypeAbsenByJadwal = async (userId) => {
+  const SQLQuery = `SELECT DISTINCT
+    t.absen_id,
+    t.name,
+    t.description,
+    r.retail_id,
+    r.name as retail_name,
+    r.latitude,
+    r.longitude,
+    r.radius,
+    t.start_time,
+    t.end_time,
+    NULL as group_absen,
+case when a.absensi_id is not null then 1 else 0 end as is_absen_today,
+t.kategori_absen
+FROM
+    jadwal_harian j
+JOIN
+    retail r ON r.retail_id = j.retail_id
+JOIN
+    tipe_absen t ON t.retail_id = j.retail_id AND t.kategori_absen = j.kategori_absen AND t.is_deleted=0
+LEFT JOIN
+  (select absensi_id, absen_type_id, user_id from absensi where absen_time >= CURDATE() AND is_valid=1 ) a on a.absen_type_id = t.absen_id AND a.user_id = j.user_id
+WHERE
+    j.user_id = ?
+    AND j.tanggal = CURDATE()
+    AND j.is_deleted = 0
+ORDER BY t.name ASC`;
+  return dbpool.execute(SQLQuery, [userId]);
+};
+
+const getTypeAbsenPerShift = async (userId) => {
+  const [users] = await dbpool.query(
+    "SELECT category_user FROM user WHERE user_id = ?",
+    [userId]
+  );
+  const category = users[0]?.category_user;
+
+  // Sales Toko / Trainee Sales Toko => pakai jadwal harian bila sudah di-assign hari ini.
+  if (SHIFT_SCHEDULED_CATEGORIES.includes(Number(category))) {
+    const [jadwalRows] = await dbpool.query(
+      "SELECT id FROM jadwal_harian WHERE user_id = ? AND tanggal = CURDATE() AND is_deleted = 0 LIMIT 1",
+      [userId]
+    );
+    if (jadwalRows.length > 0) {
+      return getTypeAbsenByJadwal(userId);
+    }
+    // Belum di-assign hari ini => tidak ada tipe absen (tak boleh absen sampai admin memetakan).
+    return [[], []];
+  }
+
+  // Kategori lain => perilaku lama tak berubah.
+  return getTypeAbsenByCategory(userId);
 };
 
 const checkFlagAbsen = async (user_id) => {

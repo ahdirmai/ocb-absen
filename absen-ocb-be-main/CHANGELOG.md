@@ -3,6 +3,17 @@
 ## [Unreleased]
 
 ### Added
+- **Jadwal Shift Harian per-orang** — hanya untuk Sales Toko (`category_user=18`) & Trainee Sales Toko (`21`)
+  - Tabel baru `jadwal_harian` (lihat `docs/jadwal-harian.sql`) — 1 baris = user + tanggal + retail + `kategori_absen`, `UNIQUE(user_id, tanggal)`
+  - Endpoint (auth):
+    - `GET /api/jadwal-harian?month=YYYY-MM&retail_id=optional` — list jadwal per bulan
+    - `GET /api/jadwal-harian/eligible-users` — user Sales Toko & Trainee saja
+    - `GET /api/jadwal-harian/kategori/:retailId` — opsi `kategori_absen` (shift) per retail
+    - `POST /api/jadwal-harian/assign` — upsert bulk (banyak user × rentang tanggal)
+    - `POST /api/jadwal-harian/delete/:id` — soft delete
+  - `getTypeAbsenPerShift` (`POST /api/absen-management/shift-user/:userId`): untuk kategori 18/21 yang sudah punya jadwal hari ini → tampilkan hanya tipe absen retail + `kategori_absen` sesuai jadwal; belum di-assign → kosong (tak bisa absen); kategori lain → perilaku lama (tak berubah)
+  - Halaman admin FE baru `JadwalHarian.jsx` (`/jadwal-harian`) untuk mapping manual
+
 - **Rekap Kalender Absensi** — `GET /api/absensi/rekap-kalender?month=YYYY-MM&retail_id=optional`
   - Status per hari per karyawan per retail: hadir / terlambat / alpha / libur / belum
   - Filter hanya tipe absen `description LIKE 'Absen Masuk%'`
