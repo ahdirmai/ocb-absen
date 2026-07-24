@@ -1330,10 +1330,11 @@ const AbsenKaryawan = () => {
           </p>
           <div style={{ marginBottom: "10px" }}>
             <label style={{ display: "block", marginBottom: "4px", fontSize: "13px", fontWeight: "bold", color: "#7f4f00" }}>
-              Lokasi Lembur (OC/Store):
+              Lokasi Lembur (OC/Store):{lemburDirection === "keluar" ? " (terkunci)" : ""}
             </label>
             <select
               value={selectedLemburRetail?.retail_id || ""}
+              disabled={lemburDirection === "keluar"}
               onChange={(e) => {
                 const retail = lemburRetails.find((r) => String(r.retail_id) === e.target.value);
                 setSelectedLemburRetail(retail || null);
@@ -1344,6 +1345,8 @@ const AbsenKaryawan = () => {
                 borderRadius: "5px",
                 border: "1px solid #ddd",
                 fontSize: "14px",
+                background: lemburDirection === "keluar" ? "#f0f0f0" : "#fff",
+                cursor: lemburDirection === "keluar" ? "not-allowed" : "pointer",
               }}
             >
               <option value="" disabled>-- Pilih OC/Store --</option>
