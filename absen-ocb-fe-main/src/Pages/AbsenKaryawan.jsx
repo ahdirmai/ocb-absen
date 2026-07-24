@@ -285,6 +285,13 @@ const AbsenKaryawan = () => {
     [history]
   );
 
+  // Hari ini sudah ada absen regular (is_lembur=0, bukan rejected).
+  const todayHasRegular = useMemo(() => {
+    return history.some(
+      (item) => isSameLocalDate(item.absen_time) && !isRejectedAttendance(item) && item.is_lembur !== 1 && item.is_lembur !== "1"
+    );
+  }, [history]);
+
   // Ada absen pending (menunggu approval) hari ini → blokir attempt baru.
   const todayHasPending = useMemo(() => {
     return history.some((item) => {
@@ -373,6 +380,12 @@ const AbsenKaryawan = () => {
       return true;
     });
   }, [effectiveLemburMode, lemburDirection, lemburTypes, history]);
+
+  // Check ketersediaan lembur (independent dari effectiveLemburMode) untuk button.
+  const hasAvailableLemburTypes = useMemo(() => {
+    if (lemburTypes.length === 0) return false;
+    return lemburTypes.some((t) => isWithinShiftWindow(t.kategori_absen));
+  }, [lemburTypes]);
 
   const activeTypes = effectiveLemburMode ? filteredLemburTypes : absenTypes;
 
@@ -1328,7 +1341,7 @@ const AbsenKaryawan = () => {
         );
       })()}
 
-      {filteredLemburTypes.length > 0 && !effectiveLemburMode && !attendanceMode && (
+      {hasAvailableLemburTypes && !effectiveLemburMode && todayHasRegular && attendanceMode !== "lembur" && (
         <button
           onClick={() => {
             setIsLemburMode(true);
