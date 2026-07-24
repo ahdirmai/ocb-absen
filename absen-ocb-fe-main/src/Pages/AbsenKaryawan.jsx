@@ -1332,7 +1332,6 @@ const AbsenKaryawan = () => {
         <button
           onClick={() => {
             setIsLemburMode(true);
-            setSelectedAbsenType(String(lemburTypes[0].absen_id));
           }}
           style={{
             width: "100%",

@@ -50,7 +50,7 @@ const createAbsensi = async (req, res) => {
     const isOvertime = String(body.reason || "")
       .toLowerCase()
       .includes("lembur");
-    body.is_lembur = body.is_lembur || isOvertime ? 1 : 0;
+    body.is_lembur = (body.is_lembur === 1 || body.is_lembur === "1" || isOvertime) ? 1 : 0;
 
     if (!getTimeDB) {
       removeUploadedImage(file.filename);
