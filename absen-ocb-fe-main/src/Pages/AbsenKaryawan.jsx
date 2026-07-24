@@ -931,12 +931,15 @@ const AbsenKaryawan = () => {
     }
 
     if (isOvertimeAttempt) {
-      const lemburTypeName = selectedTypeDetail?.name || currentAttemptDirection;
+      const lemburDirection = effectiveLemburMode ? (currentAttemptDirection === "masuk" ? "Masuk" : "Keluar") : currentAttemptLabel;
+      const lemburTypeName = selectedTypeDetail?.name || "";
+      const lemburOcName = selectedLemburRetail?.name || "";
+      const confirmText = effectiveLemburMode
+        ? `Lembur ${lemburDirection}: ${lemburTypeName}${lemburOcName ? ` di ${lemburOcName}` : ""}. Perlu approval atasan. Lanjutkan?`
+        : `${currentAttemptLabel} lembur (${currentAttemptDirection}). Perlu approval atasan. Lanjutkan?`;
       const confirmation = await Swal.fire({
         title: "Konfirmasi Lembur",
-        text: effectiveLemburMode
-          ? `Absen lembur dengan tipe "${lemburTypeName}". Absen ini perlu approval atasan. Lanjutkan?`
-          : `${currentAttemptLabel} lembur akan memakai tipe absen dengan deskripsi ${currentAttemptDirection}. Absen ini perlu approval atasan. Lanjutkan?`,
+        text: confirmText,
         icon: "warning",
         showCancelButton: true,
         confirmButtonText: "Ya, submit lembur",
