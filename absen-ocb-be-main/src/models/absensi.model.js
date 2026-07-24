@@ -75,9 +75,11 @@ const rejectAbsen =(approved_at, absenId)=>{
 }
 
 const validasiAbsen =(body, absenId)=>{
-    const SQLQuery = `UPDATE  absensi set is_valid ='${body.is_valid}' WHERE absensi_id =${absenId}`;
+    const isValid = Number(body.is_valid);
+    const statusApproval = isValid === 1 ? 2 : 1; // 2=approved, 1=waiting
+    const SQLQuery = `UPDATE absensi SET is_valid = ?, status_approval = ? WHERE absensi_id = ?`;
 
-    return dbpool.execute(SQLQuery);
+    return dbpool.execute(SQLQuery, [isValid, statusApproval, absenId]);
 }
 
 
