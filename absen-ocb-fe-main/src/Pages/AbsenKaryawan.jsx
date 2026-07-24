@@ -376,6 +376,24 @@ const AbsenKaryawan = () => {
     }
   }, [effectiveLemburMode, filteredLemburTypes, selectedAbsenType]);
 
+  // Auto-select OC dari lembur masuk di history untuk lembur keluar.
+  useEffect(() => {
+    if (!effectiveLemburMode || selectedLemburRetail) return;
+    const todayLemburMasuk = history.find(
+      (item) =>
+        (item.is_lembur === 1 || item.is_lembur === "1") &&
+        isSameLocalDate(item.absen_time) &&
+        getAbsenDirection(item) === "masuk" &&
+        !isRejectedAttendance(item)
+    );
+    if (todayLemburMasuk?.retail_id) {
+      const retail = lemburRetails.find(
+        (r) => String(r.retail_id) === String(todayLemburMasuk.retail_id)
+      );
+      if (retail) setSelectedLemburRetail(retail);
+    }
+  }, [effectiveLemburMode, history, lemburRetails, selectedLemburRetail]);
+
   // Fetch lembur types when user has an assigned shift (jadwal)
   useEffect(() => {
     if (!isLoggedIn) {
@@ -1378,7 +1396,7 @@ const AbsenKaryawan = () => {
         {isOvertimeAttempt && (
           <p style={{ margin: "8px 0 0", fontSize: "13px", color: "#d35400", fontWeight: "bold" }}>
             {effectiveLemburMode && selectedTypeDetail
-              ? `Tipe: ${selectedTypeDetail.name} — perlu approval atasan.`
+              ? `Tipe: ${selectedTypeDetail.name}${selectedLemburRetail ? ` — ${selectedLemburRetail.name}` : ""} — perlu approval atasan.`
               : "Akan dihitung lembur dan perlu approval atasan."}
           </p>
         )}
