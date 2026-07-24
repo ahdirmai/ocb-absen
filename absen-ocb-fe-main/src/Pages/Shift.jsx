@@ -29,6 +29,7 @@ const Shift = () => {
     end_date: "",
     user_id: "",
     retail_id: "",
+    uses_jadwal_harian: 0,
   });
   const [filterText, setFilterText] = useState({
     start_date: "",
@@ -56,6 +57,7 @@ const Shift = () => {
           end_date: item.end_date || "",
           retail_name: item.retail_name || "unknown",
           retail_id : item.retail_id || 0,
+          uses_jadwal_harian: item.uses_jadwal_harian || 0,
           name: item.detail_user
             ? item.detail_user.map((group) => `${group.name}`).join(", ")
             : "-",
@@ -219,6 +221,7 @@ const Shift = () => {
         end_date: "",
         user_id: "",
         retail_id: "",
+        uses_jadwal_harian: 0,
       });
       setSelectedUser(null);
       setSelectedRetail(null);
@@ -317,6 +320,7 @@ const Shift = () => {
         start_date: selectedShift.start_date,
         end_date: selectedShift.end_date,
         retail_id: selectedShift.retail_id,
+        uses_jadwal_harian: selectedShift.uses_jadwal_harian ? 1 : 0,
         employes_shift,
         updated_by: userId,
         updated_at: DateNow,
@@ -630,6 +634,19 @@ const Shift = () => {
             />
           </div>
           <div className="form-group">
+            <label>Pakai Jadwal Harian?</label>
+            <select
+              className="form-select"
+              value={newShift.uses_jadwal_harian}
+              onChange={(e) =>
+                setNewShift({ ...newShift, uses_jadwal_harian: e.target.value === "1" ? 1 : 0 })
+              }
+            >
+              <option value="1">Ya</option>
+              <option value="0">Tidak</option>
+            </select>
+          </div>
+          <div className="form-group">
             <label>Nama Karyawan (
                 <span className="text-secondary text-small">
                   Kosongkan karyawan jika tujuan nya untuk Semua Karyawan
@@ -709,13 +726,29 @@ const Shift = () => {
                   />
                 </div>
                 <div className="form-group">
+                  <label>Pakai Jadwal Harian?</label>
+                  <select
+                    className="form-select"
+                    value={selectedShift.uses_jadwal_harian ? "1" : "0"}
+                    onChange={(e) =>
+                      setSelectedShift({
+                        ...selectedShift,
+                        uses_jadwal_harian: e.target.value === "1" ? 1 : 0,
+                      })
+                    }
+                  >
+                    <option value="1">Ya</option>
+                    <option value="0">Tidak</option>
+                  </select>
+                </div>
+                <div className="form-group">
                   <label>Nama Karyawan (
                 <span className="text-secondary text-small">
                   Kosongkan karyawan jika tujuan nya untuk Semua Karyawan
                 </span>
                 )</label>
                   <Select
-                    options={users} 
+                    options={users}
                     isMulti
                     value={selectedUser} // Nilai yang dipilih
                     onChange={(selected) => setSelectedUser(selected)} // Fungsi ketika berubah

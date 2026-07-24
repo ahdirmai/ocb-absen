@@ -59,6 +59,7 @@ const Login = () => {
         // 5. Simpan hasil profil ke sessionStorage
         // console.log("masuk sini")
         sessionStorage.setItem("userProfile", JSON.stringify(profileResponse.data.data));
+        sessionStorage.setItem("userData", JSON.stringify({ ...profileResponse.data.data, id: userID }));
 
         // console.log("Profile berhasil disimpan ke sessionStorage", profileResponse.data.data);
       } else {

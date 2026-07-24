@@ -80,7 +80,7 @@ const JadwalHarian = () => {
         });
         setRetails(
           (retailRes.data.data || [])
-            .filter((r) => r.uses_jadwal_harian && isOcRetail(r.name))
+            .filter((r) => isOcRetail(r.name))
             .sort((a, b) => ocNumber(a.name) - ocNumber(b.name))
             .map((r) => ({ value: r.retail_id, label: r.name }))
         );

@@ -54,7 +54,9 @@ node src/index.js
 
 > **Lembur (Sales Toko/Trainee):** Setelah absen regular, user bisa lembur pakai tipe Pagi lain (S1/S2). Pilih OC → submit → `is_lembur=1` + approval.
 
-### Jadwal Shift Harian (Sales Toko / Trainee)
+### Jadwal Shift Harian
+> **Aktivasi:** User masuk jalur jadwal harian bila punya shifting aktif hari ini (`start_date <= today <= end_date`) dengan flag `uses_jadwal_harian=1`. Set flag via toggle di halaman Shift. (Sebelumnya hardcode `category_user IN (18,21)`.)
+
 | Method | URL | Keterangan |
 |---|---|---|
 | GET | `/api/jadwal-harian?month=YYYY-MM&retail_id=` | List jadwal per bulan |

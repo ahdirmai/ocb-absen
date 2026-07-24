@@ -24,7 +24,6 @@ const Retail = () => {
     longitude: "",
     radius: "",
     is_active: 1,
-    uses_jadwal_harian: 0,
   });
 
   useEffect(() => {
@@ -74,7 +73,7 @@ const Retail = () => {
       setRetails((prev) => [ response.data.data, ...prev,]);
       Swal.fire("Success!", `${response.data.message}`, "success");
       setAddModalVisible(false);
-      setNewRetail({ name: "", latitude: "", longitude: "", radius: "", is_active: 1, uses_jadwal_harian: 0 });
+      setNewRetail({ name: "", latitude: "", longitude: "", radius: "", is_active: 1 });
     } catch (error) {
       Swal.fire("Error!", error.response?.data?.message || error.message, "error");
     }
@@ -132,7 +131,6 @@ const Retail = () => {
           longitude: selectedRetail.longitude,
           radius: selectedRetail.radius,
           is_active: selectedRetail.is_active,
-          uses_jadwal_harian: selectedRetail.uses_jadwal_harian ? 1 : 0,
           updated_by : userId,
           updated_at: DateNow
 
@@ -177,18 +175,6 @@ const Retail = () => {
           }`}
         >
           {row.is_active ? "Active" : "Non Active"}
-        </span>
-      ),
-    },
-    {
-      name: "Jadwal Harian",
-      cell: (row) => (
-        <span
-          className={`badge ${
-            row.uses_jadwal_harian ? "badge-info" : "badge-secondary"
-          }`}
-        >
-          {row.uses_jadwal_harian ? "Ya" : "Tidak"}
         </span>
       ),
     },
@@ -333,19 +319,6 @@ const Retail = () => {
               <option value="0">Non Active</option>
             </select>
           </div>
-          <div className="form-group">
-            <label>Pakai Jadwal Harian?</label>
-            <select
-              className="form-select"
-              value={newRetail.uses_jadwal_harian}
-              onChange={(e) =>
-                setNewRetail({ ...newRetail, uses_jadwal_harian: e.target.value === "1" ? 1 : 0 })
-              }
-            >
-              <option value="1">Ya</option>
-              <option value="0">Tidak</option>
-            </select>
-          </div>
         </Modal.Body>
         <Modal.Footer>
           <Button className="btn btn-light" onClick={() => setAddModalVisible(false)}>
@@ -436,22 +409,6 @@ const Retail = () => {
                   >
                     <option value="1">Active</option>
                     <option value="0">Non Active</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Pakai Jadwal Harian?</label>
-                  <select
-                    className="form-select"
-                    value={selectedRetail.uses_jadwal_harian ? "1" : "0"}
-                    onChange={(e) =>
-                      setSelectedRetail({
-                        ...selectedRetail,
-                        uses_jadwal_harian: e.target.value === "1" ? 1 : 0,
-                      })
-                    }
-                  >
-                    <option value="1">Ya</option>
-                    <option value="0">Tidak</option>
                   </select>
                 </div>
               </form>

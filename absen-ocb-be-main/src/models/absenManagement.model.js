@@ -86,9 +86,6 @@ const createNewGroupAbsen = async (groupDetails) => {
   return result;
 };
 
-// Kategori user yang memakai jadwal shift harian: Sales Toko (18) & Trainee Sales Toko (21).
-const SHIFT_SCHEDULED_CATEGORIES = [18, 21];
-
 // Query lama: tipe absen berdasarkan kategori user + shift range aktif (untuk kategori non-sales / fallback).
 const getTypeAbsenByCategory = async (userId) => {
   const SQLQuery = `SELECT DISTINCT
@@ -195,15 +192,27 @@ const getLemburTypes = async (userId) => {
   return dbpool.execute(SQLQuery, [userId, userId]);
 };
 
-const getTypeAbsenPerShift = async (userId) => {
-  const [users] = await dbpool.query(
-    "SELECT category_user FROM user WHERE user_id = ?",
+// User dianggap pakai jalur jadwal harian bila punya shifting aktif hari ini
+// (start <= CURDATE() <= end, belum dihapus) dengan flag uses_jadwal_harian = 1.
+const userUsesJadwalHarian = async (userId) => {
+  const [rows] = await dbpool.query(
+    `SELECT s.shifting_id
+     FROM shifting s
+     JOIN shift_employes se ON se.shifting_id = s.shifting_id
+     WHERE se.user_id = ?
+       AND s.is_deleted = 0
+       AND s.uses_jadwal_harian = 1
+       AND s.start_date <= CURDATE()
+       AND s.end_date >= CURDATE()
+     LIMIT 1`,
     [userId]
   );
-  const category = users[0]?.category_user;
+  return rows.length > 0;
+};
 
-  // Sales Toko / Trainee Sales Toko => pakai jadwal harian bila sudah di-assign hari ini.
-  if (SHIFT_SCHEDULED_CATEGORIES.includes(Number(category))) {
+const getTypeAbsenPerShift = async (userId) => {
+  // Shifting aktif dgn flag jadwal harian => pakai jadwal harian bila sudah di-assign hari ini.
+  if (await userUsesJadwalHarian(userId)) {
     const [jadwalRows] = await dbpool.query(
       "SELECT id FROM jadwal_harian WHERE user_id = ? AND tanggal = CURDATE() AND is_deleted = 0 LIMIT 1",
       [userId]
@@ -215,19 +224,14 @@ const getTypeAbsenPerShift = async (userId) => {
     return [[], []];
   }
 
-  // Kategori lain => perilaku lama tak berubah.
+  // Non jadwal harian => perilaku lama tak berubah.
   return getTypeAbsenByCategory(userId);
 };
 
-// Status jadwal harian: bedakan "belum di-assign admin" vs kategori non-shift.
+// Status jadwal harian: bedakan "belum di-assign admin" vs non-jadwal-harian.
 // Dipakai controller untuk pesan eksplisit saat daftar tipe absen kosong.
 const getShiftJadwalStatus = async (userId) => {
-  const [users] = await dbpool.query(
-    "SELECT category_user FROM user WHERE user_id = ?",
-    [userId]
-  );
-  const category = Number(users[0]?.category_user);
-  const isShiftScheduled = SHIFT_SCHEDULED_CATEGORIES.includes(category);
+  const isShiftScheduled = await userUsesJadwalHarian(userId);
 
   if (!isShiftScheduled) {
     return { isShiftScheduled: false, hasJadwal: false };

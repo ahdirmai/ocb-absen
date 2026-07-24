@@ -41,6 +41,7 @@ const getTypeShiftWithEmployes = async (req, res) => {
           shifting_id,
           user_id,
           retail_id,
+          uses_jadwal_harian,
           start_date,
           end_date,
           retail_name,
@@ -48,13 +49,14 @@ const getTypeShiftWithEmployes = async (req, res) => {
           created_by,
           name,
         } = row;
-  
-     
+
+
         if (!result[shifting_id]) {
           result[shifting_id] = {
             shifting_id,
           user_id,
           retail_id,
+          uses_jadwal_harian,
           start_date,
           end_date,
           name,

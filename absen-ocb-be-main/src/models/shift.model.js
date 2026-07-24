@@ -10,8 +10,8 @@ const formatLocalDate = (date) => {
 
 
 const getAllShifting = () =>{
-    const SQLQuery =`SELECT s.shifting_id, s.user_id, s.retail_id, DATE_FORMAT(s.start_date, '%Y-%m-%d') AS start_date,  DATE_FORMAT(s.end_date, '%Y-%m-%d') AS end_date, u.name, u.username, r.name as retail_name, s.created_at, s.created_by 
-    FROM shifting s 
+    const SQLQuery =`SELECT s.shifting_id, s.user_id, s.retail_id, s.uses_jadwal_harian, DATE_FORMAT(s.start_date, '%Y-%m-%d') AS start_date,  DATE_FORMAT(s.end_date, '%Y-%m-%d') AS end_date, u.name, u.username, r.name as retail_name, s.created_at, s.created_by
+    FROM shifting s
     JOIN user u ON u.user_id = s.user_id 
     JOIN retail r ON r.retail_id = s.retail_id
     WHERE s.is_deleted = 0 ORDER BY s.shifting_id desc`;
@@ -30,12 +30,13 @@ const getShiftDetail = async(shiftingId) =>{
 
 const getTypeShiftWithEmployes = async () => {
     const SQLQuery = `
-      SELECT 
-      s.shifting_id, 
-      s.retail_id, 
-      DATE_FORMAT(s.start_date, '%Y-%m-%d') AS start_date,  
+      SELECT
+      s.shifting_id,
+      s.retail_id,
+      s.uses_jadwal_harian,
+      DATE_FORMAT(s.start_date, '%Y-%m-%d') AS start_date,
       DATE_FORMAT(s.end_date, '%Y-%m-%d') AS end_date,
-      r.name as retail_name, 
+      r.name as retail_name,
       s.created_at, s.created_by,
       se.id AS shift_employe_id,
       se.user_id, 
@@ -62,8 +63,8 @@ const getTypeShiftWithEmployes = async () => {
 const createNewShift = async(body)=>{
 
     const [result] = await dbpool.query(
-        'INSERT INTO shifting (retail_id, start_date, end_date, created_at, created_by )VALUES (?,?,?,?,?)',
-        [ body.retail_id, formatLocalDate(body.start_date), formatLocalDate(body.end_date), body.created_at, body.created_by]
+        'INSERT INTO shifting (retail_id, uses_jadwal_harian, start_date, end_date, created_at, created_by )VALUES (?,?,?,?,?,?)',
+        [ body.retail_id, body.uses_jadwal_harian || 0, formatLocalDate(body.start_date), formatLocalDate(body.end_date), body.created_at, body.created_by]
     );
     return result;
 
@@ -85,12 +86,11 @@ const createNewShiftEmployes = async (employesShift) => {
     return result;
 };
 const updateShifting = (body, shiftingId) =>{
-    const SQLQuery = `UPDATE shifting 
-                        SET retail_id = '${body.retail_id}',start_date = '${formatLocalDate(body.start_date)}', end_date = '${formatLocalDate(body.end_date)}', updated_at ='${body.updated_at}',updated_by = '${body.updated_by}' 
-                        WHERE shifting_id =${shiftingId}`;
-
-    // console.log(SQLQuery);
-    return dbpool.execute(SQLQuery);
+    const SQLQuery = `UPDATE shifting
+                        SET retail_id = ?, uses_jadwal_harian = ?, start_date = ?, end_date = ?, updated_at = ?, updated_by = ?
+                        WHERE shifting_id = ?`;
+    const values = [body.retail_id, body.uses_jadwal_harian || 0, formatLocalDate(body.start_date), formatLocalDate(body.end_date), body.updated_at, body.updated_by, shiftingId];
+    return dbpool.execute(SQLQuery, values);
 }
 
 const deleteShift =(body, shiftingId)=>{

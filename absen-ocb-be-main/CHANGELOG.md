@@ -55,6 +55,16 @@
   - `GET /api/migration/absen-categories` — semua tipe absen termasuk soft-deleted
 
 ### Changed
+- **Flag `uses_jadwal_harian` pindah dari `retail` ke `shifting`** (lihat `docs/shifting-jadwal-flag.sql`)
+  - Alasan: keputusan "pakai jadwal harian" milik periode shift, bukan retail. Satu retail bisa punya shift jadwal-harian & non-jadwal.
+  - Kolom `retail.uses_jadwal_harian` di-DROP; `shifting.uses_jadwal_harian TINYINT(1) DEFAULT 0` ditambah
+  - **Gating absen tidak lagi hardcode `category_user IN (18,21)`** — `getTypeAbsenPerShift` & `getShiftJadwalStatus` sekarang cek helper `userUsesJadwalHarian`: user punya shifting aktif hari ini (`start_date <= CURDATE() <= end_date`, `is_deleted=0`) dengan `uses_jadwal_harian=1`
+  - FE `Shift.jsx`: toggle "Pakai Jadwal Harian?" di form create + update shift
+  - FE `Retail.jsx`: toggle & kolom flag dihapus (revert)
+  - FE `JadwalHarian.jsx`: dropdown retail tampilkan semua OC (filter flag retail dihapus)
+  - `updateShifting` di-parameterize sekalian (sebelumnya string-interpolation → rawan SQL injection)
+  - Catatan: approval telat Sales Toko/Trainee di `absensi.controller.js` tetap pakai `category_user IN (18,21)` (konsep terpisah dari gating jadwal)
+
 - **Validasi radius absen** — absen di luar radius retail sekarang diblokir (HTTP 400), sebelumnya hanya ditandai `is_approval=1`
   - Berlaku hanya jika retail punya `latitude`, `longitude`, dan `radius`; retail tanpa data lokasi tetap lolos
   - Pesan: `"Anda berada di luar radius lokasi absen. Absen tidak dapat dilakukan."`
