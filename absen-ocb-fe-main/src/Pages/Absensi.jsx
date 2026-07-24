@@ -272,8 +272,19 @@ const Absensi = () => {
       ),
       
       
-      selector: (row) => row.description },
-    { 
+      selector: (row) => row.description,
+      cell: (row) => (
+        <span>
+          {row.description || "-"}
+          {(row.is_lembur === 1 || row.is_lembur === "1") && (
+            <span className="badge bg-warning text-dark" style={{ marginLeft: "6px", fontSize: "10px" }}>
+              Lembur
+            </span>
+          )}
+        </span>
+      ),
+    },
+    {
       name: (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
           <span style={{ marginBottom: "6px" }}>Fee</span>
@@ -444,7 +455,8 @@ const Absensi = () => {
         "Waktu Absen": format(new Date(row.absen_time), "yyyy-MM-dd HH:mm:ss"),
         "Deskripsi Absen": row.description,
         "Fee": row.fee,
-        "Status": row.is_valid ? "Valid" : "Invalid" ,
+        "Status": row.is_valid ? "Valid" : "Invalid",
+        "Lembur": (row.is_lembur === 1 || row.is_lembur === "1") ? "Ya" : "Tidak",
       }));
   
       const worksheet = XLSX.utils.json_to_sheet(data);

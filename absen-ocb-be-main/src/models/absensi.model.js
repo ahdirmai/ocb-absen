@@ -217,10 +217,12 @@ const historyAbsensiAllUser = async (start_date, end_date) => {
         ta.name AS category_absen, 
         ta.description, 
         ta.fee, 
-        uz.name AS Approval, 
-        a.is_valid, 
+        uz.name AS Approval,
+        a.is_valid,
         a.reason,
-        a.photo_url
+        a.photo_url,
+        a.status_approval,
+        a.is_lembur
       FROM absensi a 
       JOIN user u ON u.user_id = a.user_id  
       JOIN retail r ON r.retail_id = a.retail_id 
