@@ -63,6 +63,12 @@ const JadwalHarian = () => {
   const [modalKategori, setModalKategori] = useState(null);
   const [savingModal, setSavingModal] = useState(false);
 
+  // Import Excel state
+  const [importModalVisible, setImportModalVisible] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+
   const monthStr = format(monthDate, "yyyy-MM");
 
   // --- Fetch retails sekali (OC 1-40) ---
@@ -74,7 +80,7 @@ const JadwalHarian = () => {
         });
         setRetails(
           (retailRes.data.data || [])
-            .filter((r) => isOcRetail(r.name))
+            .filter((r) => r.uses_jadwal_harian && isOcRetail(r.name))
             .sort((a, b) => ocNumber(a.name) - ocNumber(b.name))
             .map((r) => ({ value: r.retail_id, label: r.name }))
         );
@@ -242,13 +248,82 @@ const JadwalHarian = () => {
     }
   };
 
+  // --- Import Excel handlers ---
+  const handleDownloadTemplate = async () => {
+    try {
+      const res = await fetch(`${VITE_API_URL}/jadwal-harian/import-template`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+      });
+      if (!res.ok) throw new Error("Gagal download template.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "template-jadwal-harian.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      Swal.fire("Error!", e.message, "error");
+    }
+  };
+
+  const handleImportExcel = async () => {
+    if (!importFile) {
+      Swal.fire("Peringatan", "Pilih file Excel terlebih dahulu.", "warning");
+      return;
+    }
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", importFile);
+      const res = await fetch(`${VITE_API_URL}/jadwal-harian/import`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.status === "success") {
+        setImportResult(data.data);
+        if (data.data.inserted > 0 && selectedRetail) {
+          // Refresh jadwal bila ada retail terpilih
+          const res2 = await axios.get(
+            `${VITE_API_URL}/jadwal-harian?month=${monthStr}&retail_id=${selectedRetail.value}`,
+            { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
+          );
+          if (res2.data.status === "success") {
+            setJadwalRows(res2.data.data || []);
+          }
+        }
+      } else {
+        Swal.fire("Error!", data.message || "Import gagal.", "error");
+      }
+    } catch (e) {
+      Swal.fire("Error!", e.message, "error");
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div className="content-wrapper">
       <div className="row">
         <div className="col-12 grid-margin stretch-card">
           <div className="card">
             <div className="card-body">
-              <h4 className="card-title">Jadwal Shift Harian (Sales Toko / Trainee)</h4>
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <h4 className="card-title mb-0">Jadwal Shift Harian (Sales Toko / Trainee)</h4>
+                <div className="d-flex gap-2">
+                  <button className="btn btn-outline-info btn-sm" onClick={handleDownloadTemplate}>
+                    Download Template
+                  </button>
+                  <button className="btn btn-outline-success btn-sm" onClick={() => { setImportModalVisible(true); setImportResult(null); setImportFile(null); }}>
+                    Import Excel
+                  </button>
+                </div>
+              </div>
 
               {/* Step 1: Pilih OC */}
               <div className="mb-4" style={{ maxWidth: "360px" }}>
@@ -259,6 +334,7 @@ const JadwalHarian = () => {
                   onChange={handleRetailChange}
                   placeholder="Pilih OC..."
                   isClearable
+                  menuPosition="fixed"
                 />
               </div>
 
@@ -452,6 +528,7 @@ const JadwalHarian = () => {
                   onChange={setModalKategori}
                   placeholder="Pilih shift..."
                   noOptionsMessage={() => "Tidak ada kategori shift"}
+                  menuPosition="fixed"
                 />
               </div>
               <small className="text-muted">
@@ -476,6 +553,52 @@ const JadwalHarian = () => {
           </Button>
           <Button variant="primary" onClick={handleSaveCell} disabled={savingModal}>
             {savingModal ? "Menyimpan..." : "Simpan"}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Modal Import Excel */}
+      <Modal show={importModalVisible} onHide={() => setImportModalVisible(false)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>Import Jadwal dari Excel</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <p className="text-muted mb-3">
+            Upload file .xlsx/.xls dengan format template. Download template terlebih dahulu jika belum punya.
+          </p>
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            className="form-control mb-3"
+            onChange={(e) => setImportFile(e.target.files[0] || null)}
+          />
+          {importing && <p className="text-info">Mengimport...</p>}
+          {importResult && (
+            <div className={`alert ${importResult.errors?.length > 0 ? "alert-warning" : "alert-success"}`}>
+              <p className="mb-1"><strong>Total baris:</strong> {importResult.total_rows}</p>
+              <p className="mb-1"><strong>Berhasil insert:</strong> {importResult.inserted}</p>
+              <p className="mb-1"><strong>Dilewati (error):</strong> {importResult.skipped}</p>
+              {importResult.groups > 0 && <p className="mb-1"><strong>Grup (retail+bulan):</strong> {importResult.groups}</p>}
+              {importResult.errors?.length > 0 && (
+                <details className="mt-2">
+                  <summary>Detail error ({importResult.errors.length})</summary>
+                  <ul className="mb-0 mt-1" style={{ fontSize: "12px" }}>
+                    {importResult.errors.slice(0, 20).map((err, i) => (
+                      <li key={i}>Row {err.row}: {err.error}</li>
+                    ))}
+                    {importResult.errors.length > 20 && <li>...dan {importResult.errors.length - 20} error lainnya</li>}
+                  </ul>
+                </details>
+              )}
+            </div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setImportModalVisible(false)}>
+            Tutup
+          </Button>
+          <Button variant="success" onClick={handleImportExcel} disabled={importing || !importFile}>
+            {importing ? "Mengimport..." : "Import"}
           </Button>
         </Modal.Footer>
       </Modal>

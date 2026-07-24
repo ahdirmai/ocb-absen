@@ -1,5 +1,6 @@
 const express = require("express");
 const authenticateToken = require("../middleware/authMiddleware.js");
+const uploadLaporan = require("../middleware/multerLaporan");
 const jadwalHarianController = require("../controller/jadwalHarian.controller");
 const router = express.Router();
 
@@ -19,5 +20,9 @@ router.post("/set-date", authenticateToken, jadwalHarianController.setByDate);
 router.post("/assign", authenticateToken, jadwalHarianController.assign);
 // Soft delete jadwal
 router.post("/delete/:id", authenticateToken, jadwalHarianController.deleteJadwal);
+// Download template import Excel
+router.get("/import-template", authenticateToken, jadwalHarianController.getImportTemplate);
+// Import Excel jadwal (multipart upload, field 'file')
+router.post("/import", authenticateToken, uploadLaporan.single("file"), jadwalHarianController.importJadwal);
 
 module.exports = router;
