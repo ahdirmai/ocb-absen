@@ -2,8 +2,8 @@ const dbpool = require('../config/database');
 
 
 const createAbsensi = async (body, imageUrl, status_absen, status_approval, upline, timeAbsenFull, potongan, is_valid) => {
-    const query = `INSERT INTO absensi (user_id, retail_id, absen_type_id, absen_time, latitude, longitude, reason, potongan, photo_url, is_approval, approval_by, status_absen, status_approval, is_valid)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    const query = `INSERT INTO absensi (user_id, retail_id, absen_type_id, absen_time, latitude, longitude, reason, potongan, photo_url, is_approval, approval_by, status_absen, status_approval, is_valid, is_lembur)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     const values = [
       body.user_id,
@@ -19,7 +19,8 @@ const createAbsensi = async (body, imageUrl, status_absen, status_approval, upli
       upline,
       status_absen,
       status_approval,
-      is_valid
+      is_valid,
+      body.is_lembur ? 1 : 0
     ];
   
     // Eksekusi query untuk insert data absensi
@@ -51,9 +52,9 @@ const getTimeDB = async (absen_id, retail_id) => {
 }
 
 const getUpline = async (user_id) => {
-    const [user] = await dbpool.query('SELECT upline FROM user WHERE user_id = ? ', [user_id]);
+    const [user] = await dbpool.query('SELECT upline, category_user FROM user WHERE user_id = ? ', [user_id]);
     return user[0];
-    
+
 }
 
 const getPotonganLate = async (idPotongan) => {
@@ -93,7 +94,7 @@ const historyAbsensiPerUser = async (userId, body) => {
             a.absensi_id, a.user_id, u.name AS nama_karyawan, a.absen_time, 
             a.retail_id, r.name AS retail_name, a.absen_type_id, a.photo_url,
             ta.name AS category_absen, ta.description, ta.start_time, ta.end_time, ta.kategori_absen, ta.fee, a.reason, 
-            sa.description AS status, uap.name AS approval_by, ap.description_status AS status_approval, a.is_valid 
+            sa.description AS status, uap.name AS approval_by, ap.description_status AS status_approval, a.is_valid, a.is_lembur
         FROM absensi a 
         JOIN user u ON u.user_id = a.user_id  
         JOIN retail r ON r.retail_id = a.retail_id 
@@ -343,6 +344,28 @@ const getMasukCountIncludingYesterday = async (user_id) => {
     };
 };
 
+// Hitung absen masuk yang SUDAH DISETUJUI (approved / tak butuh approval).
+// status_approval: 1=waiting, 2=approved, 3=rejected. NULL = legacy dianggap sah.
+// Dipakai untuk memblokir absen keluar bila masuk masih menunggu approval.
+const getApprovedMasukCount = async (user_id, includeYesterday = false) => {
+    const dateFilter = includeYesterday
+        ? "DATE(a.absen_time) >= (CURDATE() - INTERVAL 1 DAY)"
+        : "DATE(a.absen_time) = CURDATE()";
+
+    const [results] = await dbpool.query(
+        `SELECT
+            SUM(CASE WHEN LOWER(ta.description) LIKE '%masuk%' THEN 1 ELSE 0 END) AS total_masuk
+         FROM absensi a
+         JOIN tipe_absen ta ON ta.absen_id = a.absen_type_id
+         WHERE a.user_id = ?
+           AND ${dateFilter}
+           AND (a.status_approval IS NULL OR a.status_approval = 2)`,
+        [user_id]
+    );
+
+    return Number(results[0]?.total_masuk || 0);
+};
+
 
 
 
@@ -421,6 +444,7 @@ module.exports={
     cekAbsensiTodayByTimeCategory,
     getTodayAttendanceDirectionSummary,
     getMasukCountIncludingYesterday,
+    getApprovedMasukCount,
     getRekapKalenderUsers,
     getRekapKalenderAbsensi,
     getRekapKalenderOffday

@@ -211,7 +211,27 @@ const getTypeAbsenPerShift = async(req, res) =>{
             status_code : "500",
             serverMessage : error
         })
-    }  
+    }
+}
+
+const getLemburTypes = async(req, res) => {
+    const {userId} = req.params;
+    try {
+        const [data] = await absenManagementModel.getLemburTypes(userId);
+        res.json({
+            message: 'Get Lembur Types Success',
+            status: "success",
+            status_code: "200",
+            data
+        });
+    } catch(error) {
+        res.status(500).json({
+            message: "Internal Server Error",
+            status: "failed",
+            status_code: "500",
+            serverMessage: error
+        });
+    }
 }
 
 
@@ -328,6 +348,7 @@ module.exports ={
     createNewAbsenType,
     deleteTypeAbsen,
     getTypeAbsenPerShift,
+    getLemburTypes,
     getTypeAbsenWithGroups,
     updateAbsenType
 }

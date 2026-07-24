@@ -147,6 +147,39 @@ const Absensi = () => {
     });
   };
 
+  const handleIgnore = async (row) => {
+    Swal.fire({
+      title: "Ignore absen ini?",
+      text: `Absen ${row.nama_karyawan} akan diabaikan (ditolak) dan karyawan bisa absen ulang.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Ya, ignore",
+    }).then(async (result) => {
+      if (!result.isConfirmed) return;
+      try {
+        const token = localStorage.getItem("token");
+        const headers = { Authorization: `Bearer ${token}` };
+        const res = await axios.post(
+          `${VITE_API_URL}/absensi/reject-absensi/${row.absensi_id}`,
+          {},
+          { headers }
+        );
+        Swal.fire("Diabaikan!", `${res.data.message}`, "success");
+        setAbsensies((prev) =>
+          prev.map((item) =>
+            item.absensi_id === row.absensi_id
+              ? { ...item, is_valid: 0, status_approval: "rejected" }
+              : item
+          )
+        );
+      } catch (error) {
+        Swal.fire("Error!", error.response?.data?.message || error.message, "error");
+      }
+    });
+  };
+
   const columns = [
     {
       name: (
@@ -374,6 +407,25 @@ const Absensi = () => {
           {row.is_valid ? "Valid" : "Invalid"}
         </button>
       ),
+    },
+    {
+      name: (
+        <span style={{ marginBottom: "45px" }}>Ignore</span>
+      ),
+      cell: (row) =>
+        String(row.status_approval).toLowerCase().includes("tolak") ||
+        String(row.status_approval).toLowerCase().includes("reject") ||
+        String(row.status_approval) === "3" ? (
+          <span className="badge bg-secondary">Diabaikan</span>
+        ) : (
+          <button
+            className="btn btn-sm btn-gradient-warning"
+            onClick={() => handleIgnore(row)}
+            title="Abaikan absen, karyawan bisa absen ulang"
+          >
+            Ignore
+          </button>
+        ),
     },
   ];
 

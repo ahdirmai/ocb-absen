@@ -50,6 +50,27 @@ node src/index.js
 
 > **Validasi radius:** Absen ditolak (HTTP 400) jika lokasi GPS di luar `radius` retail. Hanya aktif bila retail punya `latitude`, `longitude`, dan `radius`. Pengecualian: jika di luar radius retail asal tapi masih dalam radius OC/Store lain yang aktif, absen diizinkan dengan `is_approval=1`.
 
+> **Absen telat (Sales Toko/Trainee):** Absen lewat `end_time` → `status_approval=1` (waiting). Keluar diblok sampai masuk di-approve.
+
+> **Lembur (Sales Toko/Trainee):** Setelah absen regular, user bisa lembur pakai tipe Pagi lain (S1/S2). Pilih OC → submit → `is_lembur=1` + approval.
+
+### Jadwal Shift Harian (Sales Toko / Trainee)
+| Method | URL | Keterangan |
+|---|---|---|
+| GET | `/api/jadwal-harian?month=YYYY-MM&retail_id=` | List jadwal per bulan |
+| GET | `/api/jadwal-harian/eligible-users` | User Sales Toko & Trainee |
+| GET | `/api/jadwal-harian/kategori` | Opsi shift (S1/S2/S3/S4/S5/TRAINEE) |
+| GET | `/api/jadwal-harian/by-date?retail_id=&tanggal=` | Jadwal satu retail satu tanggal |
+| GET | `/api/jadwal-harian/employees/:retailId` | Karyawan terhubung ke retail |
+| POST | `/api/jadwal-harian/assign` | Upsert bulk (user_ids + retail + absen_masuk_id + absen_keluar_id + tanggal) |
+| POST | `/api/jadwal-harian/set-date` | Replace atomik jadwal retail+tanggal |
+| POST | `/api/jadwal-harian/delete/:id` | Soft delete |
+
+### Lembur
+| Method | URL | Keterangan |
+|---|---|---|
+| GET | `/api/absen-management/lembur-types/:userId` | Tipe absen lembur (Pagi, exclude assigned shift) |
+
 ### Migration (X-Migration-Key required)
 | Method | URL | Keterangan |
 |---|---|---|

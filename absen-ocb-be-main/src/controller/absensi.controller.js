@@ -50,6 +50,7 @@ const createAbsensi = async (req, res) => {
     const isOvertime = String(body.reason || "")
       .toLowerCase()
       .includes("lembur");
+    body.is_lembur = body.is_lembur || isOvertime ? 1 : 0;
 
     if (!getTimeDB) {
       removeUploadedImage(file.filename);
@@ -69,6 +70,11 @@ const createAbsensi = async (req, res) => {
     const isEarlyMorningKeluar =
       timeAbsenMoment.format("HH:mm:ss") < "12:00:00";
 
+    const SHIFT_SCHEDULED_CATEGORIES = [18, 21];
+    const isSalesToko = SHIFT_SCHEDULED_CATEGORIES.includes(
+      Number(getUpline?.category_user)
+    );
+
     if (isKeluar) {
       const masukCount = isEarlyMorningKeluar
         ? (await absensiModel.getMasukCountIncludingYesterday(body.user_id))
@@ -84,6 +90,26 @@ const createAbsensi = async (req, res) => {
           status: "failed",
           status_code: "400",
         });
+      }
+
+      // Sales Toko / Trainee: absen keluar diblokir bila absen masuk masih
+      // menunggu approval (belum disetujui atasan).
+      if (isSalesToko) {
+        const approvedMasuk = await absensiModel.getApprovedMasukCount(
+          body.user_id,
+          isEarlyMorningKeluar
+        );
+
+        if (approvedMasuk < 1) {
+          removeUploadedImage(file.filename);
+
+          return res.status(400).json({
+            message:
+              "Absen masuk Anda masih menunggu approval atasan. Absen keluar belum bisa dilakukan.",
+            status: "failed",
+            status_code: "400",
+          });
+        }
       }
     }
 
@@ -113,6 +139,17 @@ const createAbsensi = async (req, res) => {
 
       if (diffMinutes > 15) {
         potongan = potonganLate;
+      }
+
+      // Absen telat => butuh approval atasan (sama seperti absen di luar radius).
+      // Hanya untuk Sales Toko (18) & Trainee Sales Toko (21).
+      const SHIFT_SCHEDULED_CATEGORIES = [18, 21];
+      if (SHIFT_SCHEDULED_CATEGORIES.includes(Number(getUpline?.category_user))) {
+        body.is_approval = 1;
+        const lateReason = "Anda absen telat, menunggu approval atasan";
+        body.reason = String(body.reason || "").trim()
+          ? `${body.reason}; ${lateReason}`
+          : lateReason;
       }
     }
 

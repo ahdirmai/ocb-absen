@@ -119,7 +119,7 @@ JOIN
 JOIN
     retail r ON r.retail_id = s.retail_id
 LEFT JOIN
-  (select absensi_id, absen_type_id, user_id from absensi where absen_time >= CURDATE() AND is_valid=1 ) a on a.absen_type_id = t.absen_id AND a.user_id = u.user_id
+  (select absensi_id, absen_type_id, user_id from absensi where absen_time >= CURDATE() AND (status_approval IS NULL OR status_approval <> 3) ) a on a.absen_type_id = t.absen_id AND a.user_id = u.user_id
 WHERE
     se.user_id = ?
     AND s.start_date <= CURDATE()
@@ -128,9 +128,10 @@ ORDER BY t.name ASC`;
   return dbpool.execute(SQLQuery, [userId]);
 };
 
-// Query jadwal harian: tipe absen dari retail + kategori_absen yang di-assign admin untuk user pada CURDATE().
+// Query jadwal harian: 2 tipe absen (masuk + keluar) via FK langsung.
+// Retail hanya sumber koordinat (lat/long/radius).
 const getTypeAbsenByJadwal = async (userId) => {
-  const SQLQuery = `SELECT DISTINCT
+  const SQLQuery = `SELECT
     t.absen_id,
     t.name,
     t.description,
@@ -142,22 +143,54 @@ const getTypeAbsenByJadwal = async (userId) => {
     t.start_time,
     t.end_time,
     NULL as group_absen,
-case when a.absensi_id is not null then 1 else 0 end as is_absen_today,
-t.kategori_absen
-FROM
+    CASE WHEN a.absensi_id IS NOT NULL THEN 1 ELSE 0 END AS is_absen_today,
+    t.kategori_absen
+  FROM
     jadwal_harian j
-JOIN
+  JOIN
     retail r ON r.retail_id = j.retail_id
-JOIN
-    tipe_absen t ON t.retail_id = j.retail_id AND t.kategori_absen = j.kategori_absen AND t.is_deleted=0
-LEFT JOIN
-  (select absensi_id, absen_type_id, user_id from absensi where absen_time >= CURDATE() AND is_valid=1 ) a on a.absen_type_id = t.absen_id AND a.user_id = j.user_id
-WHERE
+  JOIN
+    tipe_absen t ON t.is_deleted = 0
+      AND (t.absen_id = j.absen_masuk_id OR t.absen_id = j.absen_keluar_id)
+  LEFT JOIN
+    (SELECT absensi_id, absen_type_id, user_id
+     FROM absensi
+     WHERE absen_time >= CURDATE() AND (status_approval IS NULL OR status_approval <> 3)
+    ) a ON a.absen_type_id = t.absen_id AND a.user_id = j.user_id
+  WHERE
     j.user_id = ?
     AND j.tanggal = CURDATE()
     AND j.is_deleted = 0
-ORDER BY t.name ASC`;
+  ORDER BY t.description ASC`;
   return dbpool.execute(SQLQuery, [userId]);
+};
+
+// Tipe absen lembur untuk Sales Toko/Trainee: masuk+keluar Pagi saja.
+// Exclude absen_masuk_id + absen_keluar_id dari jadwal hari ini (sudah dipakai regular).
+const getLemburTypes = async (userId) => {
+  const SQLQuery = `
+    SELECT DISTINCT
+      t.absen_id, t.name, t.description, t.kategori_absen,
+      t.start_time, t.end_time,
+      r.retail_id, r.name AS retail_name,
+      r.latitude, r.longitude, r.radius
+    FROM tipe_absen t
+    JOIN group_absen ga ON ga.absen_type_id = t.absen_id
+    LEFT JOIN retail r ON r.retail_id = t.retail_id
+    WHERE t.is_deleted = 0
+      AND (ga.id_category IN (18, 0))
+      AND LOWER(t.kategori_absen) = 'pagi'
+      AND (LOWER(t.description) LIKE '%masuk%' OR LOWER(t.description) LIKE '%keluar%' OR LOWER(t.description) LIKE '%pulang%')
+      AND t.name NOT LIKE '%TRAINEE%'
+      AND t.absen_id NOT IN (
+        SELECT j.absen_masuk_id FROM jadwal_harian j
+        WHERE j.user_id = ? AND j.tanggal = CURDATE() AND j.is_deleted = 0
+        UNION
+        SELECT j.absen_keluar_id FROM jadwal_harian j
+        WHERE j.user_id = ? AND j.tanggal = CURDATE() AND j.is_deleted = 0
+      )
+    ORDER BY t.name ASC, t.description ASC`;
+  return dbpool.execute(SQLQuery, [userId, userId]);
 };
 
 const getTypeAbsenPerShift = async (userId) => {
@@ -351,6 +384,7 @@ module.exports = {
   updateAbsenType2,
   deleteTypeAbsen,
   getTypeAbsenPerShift,
+  getLemburTypes,
   checkFlagAbsen,
   createNewGroupAbsen,
   getTypeAbsenWithGroups,

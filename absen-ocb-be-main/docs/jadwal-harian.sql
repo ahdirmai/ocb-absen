@@ -1,14 +1,14 @@
--- Migrasi: tabel jadwal_harian
+-- Migrasi: tabel jadwal_harian (FK absen_masuk_id + absen_keluar_id)
 -- Jadwal shift harian per-orang untuk Sales Toko (category_user=18) & Trainee Sales Toko (21).
--- 1 baris = 1 user pada 1 tanggal, menentukan retail + kategori_absen shift.
--- UNIQUE(user_id, tanggal) => 1 shift per orang per hari (di-upsert saat re-assign).
+-- 1 baris = 1 user pada 1 tanggal, menentukan retail + tipe absen masuk & keluar (FK ke tipe_absen.absen_id).
 
 CREATE TABLE IF NOT EXISTS `jadwal_harian` (
   `id` int NOT NULL AUTO_INCREMENT,
   `user_id` int NOT NULL,
   `tanggal` date NOT NULL,
   `retail_id` int NOT NULL,
-  `kategori_absen` varchar(45) NOT NULL,
+  `absen_masuk_id` int NOT NULL COMMENT 'FK -> tipe_absen.absen_id (Absen Masuk)',
+  `absen_keluar_id` int NOT NULL COMMENT 'FK -> tipe_absen.absen_id (Absen Keluar)',
   `created_at` datetime DEFAULT NULL,
   `created_by` varchar(100) DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
@@ -19,5 +19,6 @@ CREATE TABLE IF NOT EXISTS `jadwal_harian` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_user_tanggal` (`user_id`, `tanggal`),
   KEY `idx_tanggal` (`tanggal`),
-  KEY `idx_user_tanggal_active` (`user_id`, `tanggal`, `is_deleted`)
+  CONSTRAINT `fk_jadwal_masuk` FOREIGN KEY (`absen_masuk_id`) REFERENCES `tipe_absen` (`absen_id`),
+  CONSTRAINT `fk_jadwal_keluar` FOREIGN KEY (`absen_keluar_id`) REFERENCES `tipe_absen` (`absen_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -76,15 +76,35 @@ const buildTanggalList = (body) => {
   return [];
 };
 
-const getKategoriByRetail = async (req, res) => {
+const getEmployeesByRetail = async (req, res) => {
   const { retailId } = req.params;
   try {
-    const [data] = await jadwalHarianModel.getKategoriByRetail(retailId);
+    const [data] = await jadwalHarianModel.getEmployeesByRetail(retailId);
+    res.json({
+      message: "Get employees by retail success",
+      status: "success",
+      status_code: "200",
+      data,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Internal Server Error",
+      status: "failed",
+      status_code: "500",
+      serverMessage: error.message || error,
+    });
+  }
+};
+
+const getKategoriShift = async (_req, res) => {
+  try {
+    const [data] = await jadwalHarianModel.getKategoriShift();
     res.json({
       message: "Get kategori absen success",
       status: "success",
       status_code: "200",
-      data: data.map((r) => r.kategori_absen),
+      // [{ shift_name, kategori_absen, absen_masuk_id, absen_keluar_id }]
+      data,
     });
   } catch (error) {
     res.status(500).json({
@@ -98,7 +118,7 @@ const getKategoriByRetail = async (req, res) => {
 
 const assign = async (req, res) => {
   const { body } = req;
-  const { user_ids, retail_id, kategori_absen } = body;
+  const { user_ids, retail_id, absen_masuk_id, absen_keluar_id } = body;
 
   if (!Array.isArray(user_ids) || user_ids.length === 0) {
     return res.status(400).json({
@@ -108,9 +128,9 @@ const assign = async (req, res) => {
     });
   }
 
-  if (!retail_id || !kategori_absen) {
+  if (!retail_id || !absen_masuk_id || !absen_keluar_id) {
     return res.status(400).json({
-      message: "retail_id dan kategori_absen wajib diisi.",
+      message: "retail_id, absen_masuk_id, dan absen_keluar_id wajib diisi.",
       status: "failed",
       status_code: "400",
     });
@@ -135,7 +155,8 @@ const assign = async (req, res) => {
         user_id: userId,
         tanggal,
         retail_id,
-        kategori_absen,
+        absen_masuk_id,
+        absen_keluar_id,
         created_at: now,
         created_by: createdBy,
       });
@@ -186,10 +207,107 @@ const deleteJadwal = async (req, res) => {
   }
 };
 
+const getByDate = async (req, res) => {
+  const { retail_id, tanggal } = req.query;
+
+  if (!retail_id || !tanggal || !/^\d{4}-\d{2}-\d{2}$/.test(tanggal)) {
+    return res.status(400).json({
+      message: "retail_id dan tanggal (YYYY-MM-DD) wajib diisi.",
+      status: "failed",
+      status_code: "400",
+    });
+  }
+
+  try {
+    const [data] = await jadwalHarianModel.getJadwalByDate(retail_id, tanggal);
+    res.json({
+      message: "Get jadwal per tanggal success",
+      status: "success",
+      status_code: "200",
+      data,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Internal Server Error",
+      status: "failed",
+      status_code: "500",
+      serverMessage: error.message || error,
+    });
+  }
+};
+
+// Set/replace jadwal satu retail pada satu tanggal.
+// body: { retail_id, tanggal, assignments: [{ user_id, absen_masuk_id, absen_keluar_id }] }
+const setByDate = async (req, res) => {
+  const { retail_id, tanggal, assignments } = req.body;
+
+  if (!retail_id || !tanggal || !/^\d{4}-\d{2}-\d{2}$/.test(tanggal)) {
+    return res.status(400).json({
+      message: "retail_id dan tanggal (YYYY-MM-DD) wajib diisi.",
+      status: "failed",
+      status_code: "400",
+    });
+  }
+
+  if (!Array.isArray(assignments)) {
+    return res.status(400).json({
+      message: "assignments wajib berupa array.",
+      status: "failed",
+      status_code: "400",
+    });
+  }
+
+  const rows = [];
+  for (const a of assignments) {
+    if (!a || a.user_id == null || !a.absen_masuk_id || !a.absen_keluar_id) {
+      return res.status(400).json({
+        message: "Setiap assignment wajib punya user_id, absen_masuk_id, dan absen_keluar_id.",
+        status: "failed",
+        status_code: "400",
+      });
+    }
+    rows.push({
+      user_id: a.user_id,
+      absen_masuk_id: a.absen_masuk_id,
+      absen_keluar_id: a.absen_keluar_id,
+    });
+  }
+
+  const meta = {
+    at: moment().tz(timezone).format("YYYY-MM-DD HH:mm:ss"),
+    by: req.user?.id ? String(req.user.id) : null,
+  };
+
+  try {
+    const result = await jadwalHarianModel.setJadwalByDate(
+      retail_id,
+      tanggal,
+      rows,
+      meta
+    );
+    res.json({
+      message: "Jadwal harian berhasil disimpan.",
+      status: "success",
+      status_code: "200",
+      data: result,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Internal Server Error",
+      status: "failed",
+      status_code: "500",
+      serverMessage: error.message || error,
+    });
+  }
+};
+
 module.exports = {
   getEligibleUsers,
+  getEmployeesByRetail,
   getJadwal,
-  getKategoriByRetail,
+  getKategoriShift,
+  getByDate,
   assign,
+  setByDate,
   deleteJadwal,
 };
