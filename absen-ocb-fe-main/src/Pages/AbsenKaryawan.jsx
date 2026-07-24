@@ -328,6 +328,14 @@ const AbsenKaryawan = () => {
   // Mode terkunci: lembur aktif TAPI belum selesai. Setelah selesai → unlock ke regular.
   const effectiveLemburMode = (attendanceMode === "lembur" && !lemburComplete) || (attendanceMode === null && isLemburMode);
 
+  // Reset isLemburMode saat mode berubah (lembur selesai → kembali ke regular).
+  useEffect(() => {
+    if (attendanceMode !== "lembur" || lemburComplete) {
+      setIsLemburMode(false);
+      setSelectedLemburRetail(null);
+    }
+  }, [attendanceMode, lemburComplete]);
+
   // Lembur: filter tipe sesuai attempt. Jika belum ada lembur masuk → tampilkan masuk. Jika sudah → tampilkan keluar.
   const lemburDirection = useMemo(() => {
     if (!effectiveLemburMode) return "";
