@@ -236,6 +236,7 @@ const AbsenKaryawan = () => {
   const [photoPreview, setPhotoPreview] = useState(null);
   const [note, setNote] = useState("");
   const [absenTypes, setAbsenTypes] = useState([]);
+  const [noJadwalMessage, setNoJadwalMessage] = useState("");
   const [selectedAbsenType, setSelectedAbsenType] = useState("");
   const [lemburTypes, setLemburTypes] = useState([]);
   const [isLemburMode, setIsLemburMode] = useState(false);
@@ -255,6 +256,7 @@ const AbsenKaryawan = () => {
   const canvasRef = useRef(null);
   const isRequestingLocationRef = useRef(false);
   const activeAuthKeyRef = useRef("");
+  const isSubmittingRef = useRef(false);
 
   const hasLocation = location.latitude !== null && location.longitude !== null;
 
@@ -321,16 +323,42 @@ const AbsenKaryawan = () => {
     return null;
   }, [history]);
 
+  // Info sesi lembur hari ini dari kolom sesi_id/sesi_status (backend T5).
+  // Dual-path: bila baris lembur punya data sesi → pakai sesi; else fallback ke
+  // rekonstruksi via description (data pra-deploy). hasSesiData menandai path.
+  const todayLemburSesi = useMemo(() => {
+    const todayLembur = history.filter(
+      (item) =>
+        (item.is_lembur === 1 || item.is_lembur === "1") &&
+        isSameLocalDate(item.absen_time) &&
+        !isRejectedAttendance(item)
+    );
+    const withSesi = todayLembur.filter((item) => item.sesi_id != null);
+    const hasSesiData = withSesi.length > 0;
+    const hasOpen = withSesi.some((item) => item.sesi_status === "open");
+    const hasClosed = withSesi.some((item) => item.sesi_status === "closed");
+    const masukRow = todayLembur.find(
+      (item) => getAbsenDirection(item) === "masuk"
+    );
+    return { todayLembur, hasSesiData, hasOpen, hasClosed, masukRow };
+  }, [history]);
+
   // Cek apakah lembur sudah selesai (masuk+keluar keduanya ada).
   const lemburComplete = useMemo(() => {
     if (attendanceMode !== "lembur") return false;
-    const todayLembur = history.filter(
-      (item) => (item.is_lembur === 1 || item.is_lembur === "1") && isSameLocalDate(item.absen_time) && !isRejectedAttendance(item)
+    // Prefer sesi: sesi lembur 'closed' = selesai.
+    if (todayLemburSesi.hasSesiData) {
+      return todayLemburSesi.hasClosed;
+    }
+    // Fallback pra-sesi: scan masuk+keluar via description.
+    const masukDone = todayLemburSesi.todayLembur.some(
+      (item) => getAbsenDirection(item) === "masuk"
     );
-    const masukDone = todayLembur.some((item) => getAbsenDirection(item) === "masuk");
-    const keluarDone = todayLembur.some((item) => getAbsenDirection(item) === "keluar");
+    const keluarDone = todayLemburSesi.todayLembur.some(
+      (item) => getAbsenDirection(item) === "keluar"
+    );
     return masukDone && keluarDone;
-  }, [attendanceMode, history]);
+  }, [attendanceMode, todayLemburSesi]);
 
   // Mode terkunci: lembur aktif TAPI belum selesai. Setelah selesai → unlock ke regular.
   const effectiveLemburMode = (attendanceMode === "lembur" && !lemburComplete) || (attendanceMode === null && isLemburMode);
@@ -343,22 +371,26 @@ const AbsenKaryawan = () => {
     }
   }, [attendanceMode, lemburComplete]);
 
-  // Lembur: filter tipe sesuai attempt. Jika belum ada lembur masuk → tampilkan masuk. Jika sudah → tampilkan keluar.
+  // Lembur: arah attempt berikutnya. Prefer sesi (open → butuh keluar), else scan description.
   const lemburDirection = useMemo(() => {
     if (!effectiveLemburMode) return "";
-    const todayLembur = history.filter(
-      (item) => (item.is_lembur === 1 || item.is_lembur === "1") && isSameLocalDate(item.absen_time)
-    );
-    const lemburMasukDone = todayLembur.some(
+    // Prefer sesi: ada sesi lembur open → tinggal keluar; closed/none → masuk.
+    if (todayLemburSesi.hasSesiData) {
+      if (todayLemburSesi.hasOpen) return "keluar";
+      if (todayLemburSesi.hasClosed) return ""; // selesai
+      return "masuk";
+    }
+    // Fallback pra-sesi.
+    const lemburMasukDone = todayLemburSesi.todayLembur.some(
       (item) => getAbsenDirection(item) === "masuk" && !isRejectedAttendance(item)
     );
-    const lemburKeluarDone = todayLembur.some(
+    const lemburKeluarDone = todayLemburSesi.todayLembur.some(
       (item) => getAbsenDirection(item) === "keluar" && !isRejectedAttendance(item)
     );
     if (!lemburMasukDone) return "masuk";
     if (!lemburKeluarDone) return "keluar";
     return "";
-  }, [effectiveLemburMode, history]);
+  }, [effectiveLemburMode, todayLemburSesi]);
 
   const filteredLemburTypes = useMemo(() => {
     if (!effectiveLemburMode) return [];
@@ -366,20 +398,14 @@ const AbsenKaryawan = () => {
     return lemburTypes.filter((t) => {
       if (getAbsenDirection(t) !== lemburDirection) return false;
       if (!isWithinShiftWindow(t.kategori_absen)) return false;
-      // Lembur keluar: match name dengan lembur masuk dari history.
+      // Lembur keluar: match tipe dgn baris lembur masuk (dari sesi anchor).
       if (lemburDirection === "keluar") {
-        const lemburMasuk = history.find(
-          (item) =>
-            (item.is_lembur === 1 || item.is_lembur === "1") &&
-            isSameLocalDate(item.absen_time) &&
-            getAbsenDirection(item) === "masuk" &&
-            !isRejectedAttendance(item)
-        );
+        const lemburMasuk = todayLemburSesi.masukRow;
         if (lemburMasuk && t.name !== lemburMasuk.category_absen) return false;
       }
       return true;
     });
-  }, [effectiveLemburMode, lemburDirection, lemburTypes, history]);
+  }, [effectiveLemburMode, lemburDirection, lemburTypes, todayLemburSesi]);
 
   // Check ketersediaan lembur (independent dari effectiveLemburMode) untuk button.
   const hasAvailableLemburTypes = useMemo(() => {
@@ -653,6 +679,10 @@ const AbsenKaryawan = () => {
 
       if (response.data.status === "success") {
         const rawTypes = Array.isArray(response.data.data) ? response.data.data : [];
+
+        setNoJadwalMessage(
+          response.data.no_jadwal_assigned ? response.data.message : ""
+        );
 
         const todayStatus = buildTodayAttendanceStatus(historyRows);
         const hasCompletedRegularDay = hasCompletedRegularAttendanceStatus(todayStatus);
@@ -939,6 +969,11 @@ const AbsenKaryawan = () => {
   };
 
   const handleSubmit = async () => {
+    // Guard idempoten: cegah double-submit (klik cepat / gap await Swal).
+    if (isSubmittingRef.current) {
+      return;
+    }
+
     if (!photo) {
       Swal.fire("Error", "Wajib ambil foto selfie.", "error");
       return;
@@ -985,6 +1020,7 @@ const AbsenKaryawan = () => {
       }
     }
 
+    isSubmittingRef.current = true;
     setLoading(true);
 
     try {
@@ -1067,6 +1103,7 @@ const AbsenKaryawan = () => {
       );
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 
@@ -1431,6 +1468,47 @@ const AbsenKaryawan = () => {
         </div>
       )}
 
+      {effectiveLemburMode && filteredLemburTypes.length === 0 && (
+        <div
+          style={{
+            background: "#fff4e5",
+            border: "1px solid #f39c12",
+            borderRadius: "12px",
+            padding: "14px",
+            marginBottom: "15px",
+          }}
+        >
+          <p style={{ margin: "0 0 8px", fontWeight: "bold", color: "#d35400" }}>
+            Mode Lembur Aktif
+          </p>
+          <p style={{ margin: "0 0 10px", fontSize: "13px", color: "#7f4f00" }}>
+            {lemburRetails.length === 0
+              ? "Tidak ada OC/Store yang tersedia untuk lembur saat ini."
+              : "Tidak ada tipe absen lembur yang tersedia pada jam ini. Coba lagi sesuai jendela shift, atau batalkan lembur."}
+          </p>
+          <button
+            onClick={() => {
+              setIsLemburMode(false);
+              setSelectedLemburRetail(null);
+              if (absenTypes.length > 0) {
+                setSelectedAbsenType(String(absenTypes[0].absen_id));
+              }
+            }}
+            style={{
+              padding: "6px 12px",
+              background: "#e74c3c",
+              color: "white",
+              border: "none",
+              borderRadius: "5px",
+              cursor: "pointer",
+              fontSize: "13px",
+            }}
+          >
+            Batal Lembur
+          </button>
+        </div>
+      )}
+
       <div
         style={{
           background: isOvertimeAttempt ? "#fff4e5" : currentAttemptDirection ? "#eef7ff" : "#f7f7f7",
@@ -1568,7 +1646,9 @@ const AbsenKaryawan = () => {
           <p style={{ marginTop: "8px", color: "#c0392b", fontSize: "14px" }}>
             {effectiveLemburMode
               ? "Tidak ada tipe absen lembur yang tersedia."
-              : "Tipe absen untuk shift ini belum ditemukan."}
+              : noJadwalMessage
+                ? noJadwalMessage
+                : "Tipe absen untuk shift ini belum ditemukan."}
           </p>
         )}
       </div>

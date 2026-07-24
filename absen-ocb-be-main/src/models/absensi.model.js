@@ -1,7 +1,9 @@
 const dbpool = require('../config/database');
 
 
-const createAbsensi = async (body, imageUrl, status_absen, status_approval, upline, timeAbsenFull, potongan, is_valid) => {
+// conn opsional: bila diisi (koneksi transaksi), insert absensi + log ikut
+// transaksi yang sama supaya atomic dgn open/close absensi_sesi. Default dbpool.
+const createAbsensi = async (body, imageUrl, status_absen, status_approval, upline, timeAbsenFull, potongan, is_valid, conn = dbpool) => {
     const query = `INSERT INTO absensi (user_id, retail_id, absen_type_id, absen_time, latitude, longitude, reason, potongan, photo_url, is_approval, approval_by, status_absen, status_approval, is_valid, is_lembur)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
@@ -22,10 +24,10 @@ const createAbsensi = async (body, imageUrl, status_absen, status_approval, upli
       is_valid,
       body.is_lembur ? 1 : 0
     ];
-  
+
     // Eksekusi query untuk insert data absensi
-    const [result] = await dbpool.query(query, values);
-  
+    const [result] = await conn.query(query, values);
+
     // Log Query ke Tabel log_activity
     const logQuery = `
       INSERT INTO log_activity (table_name, action, dataquery, user_id)
@@ -37,10 +39,10 @@ const createAbsensi = async (body, imageUrl, status_absen, status_approval, upli
       dbpool.escape(query.replace(/\?/g, () => dbpool.escape(values.shift()))), // Menggantikan ? dengan nilai dari values
       body.user_id // user_id yang melakukan aksi insert
     ];
-  
+
     // Eksekusi query log untuk menyimpan aktivitas
-    await dbpool.query(logQuery, logValues);
-  
+    await conn.query(logQuery, logValues);
+
     return result;
   };
   
@@ -64,14 +66,14 @@ const getPotonganLate = async (idPotongan) => {
 }
 
 const approveAbsen =(approved_at, absenId)=>{
-    const SQLQuery = `UPDATE  absensi set status_approval=2, is_valid=1, approved_at ='${approved_at}' WHERE absensi_id =${absenId}`;
+    const SQLQuery = `UPDATE  absensi set status_approval=2, is_valid=1, approved_at = ? WHERE absensi_id = ?`;
 
-    return dbpool.execute(SQLQuery);
+    return dbpool.execute(SQLQuery, [approved_at, absenId]);
 }
 const rejectAbsen =(approved_at, absenId)=>{
-    const SQLQuery = `UPDATE  absensi set status_approval=3, is_valid=0, approved_at ='${approved_at}' WHERE absensi_id =${absenId}`;
+    const SQLQuery = `UPDATE  absensi set status_approval=3, is_valid=0, approved_at = ? WHERE absensi_id = ?`;
 
-    return dbpool.execute(SQLQuery);
+    return dbpool.execute(SQLQuery, [approved_at, absenId]);
 }
 
 const validasiAbsen =(body, absenId)=>{
@@ -92,18 +94,23 @@ const validasiAbsen =(body, absenId)=>{
 
 const historyAbsensiPerUser = async (userId, body) => {
     let SQLQuery = `
-        SELECT 
-            a.absensi_id, a.user_id, u.name AS nama_karyawan, a.absen_time, 
+        SELECT
+            a.absensi_id, a.user_id, u.name AS nama_karyawan, a.absen_time,
             a.retail_id, r.name AS retail_name, a.absen_type_id, a.photo_url,
-            ta.name AS category_absen, ta.description, ta.start_time, ta.end_time, ta.kategori_absen, ta.fee, a.reason, 
-            sa.description AS status, uap.name AS approval_by, ap.description_status AS status_approval, a.is_valid, a.is_lembur
-        FROM absensi a 
-        JOIN user u ON u.user_id = a.user_id  
-        JOIN retail r ON r.retail_id = a.retail_id 
-        JOIN tipe_absen ta ON ta.absen_id = a.absen_type_id 
+            ta.name AS category_absen, ta.description, ta.start_time, ta.end_time, ta.kategori_absen, ta.fee, a.reason,
+            sa.description AS status, uap.name AS approval_by, ap.description_status AS status_approval, a.is_valid, a.is_lembur,
+            s.sesi_id, s.status AS sesi_status,
+            CASE WHEN s.masuk_absensi_id = a.absensi_id THEN 'masuk'
+                 WHEN s.keluar_absensi_id = a.absensi_id THEN 'keluar'
+                 ELSE NULL END AS sesi_direction
+        FROM absensi a
+        JOIN user u ON u.user_id = a.user_id
+        JOIN retail r ON r.retail_id = a.retail_id
+        JOIN tipe_absen ta ON ta.absen_id = a.absen_type_id
         JOIN absen_status sa ON sa.status_id = a.status_absen
         LEFT JOIN approval_status ap ON ap.id = a.status_approval
         JOIN user uap ON uap.user_id = a.approval_by
+        LEFT JOIN absensi_sesi s ON s.masuk_absensi_id = a.absensi_id OR s.keluar_absensi_id = a.absensi_id
         WHERE a.user_id = ? `;
 
     const params = [userId]; 
@@ -139,10 +146,10 @@ const listAbsensiApproval = async(approvalId) =>{
     JOIN absen_status sa ON sa.status_id = a.status_absen
     LEFT JOIN approval_status ap ON ap.id = a.status_approval
     JOIN user uap ON uap.user_id = a.approval_by
-    WHERE a.approval_by =${approvalId} AND a.is_approval = '1' ORDER BY a.absen_time DESC`;
+    WHERE a.approval_by = ? AND a.is_approval = '1' ORDER BY a.absen_time DESC`;
 
-    
-    return dbpool.execute(SQLQuery);
+
+    return dbpool.execute(SQLQuery, [approvalId]);
 
 }
 
@@ -185,14 +192,14 @@ const cekFeePeruser = async(userId) =>{
                     FROM 
                         absensi a JOIN tipe_absen ta 
                          ON ta.absen_id=a.absen_type_id
-                    WHERE 
-                        a.user_id = '${userId}'
+                    WHERE
+                        a.user_id = ?
                         AND a.is_valid=1
                     GROUP BY 
                         DATE_FORMAT(a.absen_time, '%Y-%m')
-                    ORDER BY 
+                    ORDER BY
                         month;`;
-    return dbpool.execute(SQLQuery);
+    return dbpool.execute(SQLQuery, [userId]);
 
 }
 
@@ -327,6 +334,34 @@ const getTodayAttendanceDirectionSummary = async (user_id) => {
     };
 };
 
+// Ringkasan arah absen hari ini difilter is_lembur.
+// isLembur=false => regular (is_lembur NULL/0), isLembur=true => lembur (is_lembur=1).
+const getTodayDirectionSummaryByLembur = async (user_id, isLembur) => {
+    const lemburFilter = isLembur
+        ? "a.is_lembur = 1"
+        : "(a.is_lembur IS NULL OR a.is_lembur = 0)";
+
+    const [results] = await dbpool.query(
+        `SELECT
+            SUM(CASE WHEN LOWER(ta.description) LIKE '%masuk%' THEN 1 ELSE 0 END) AS total_masuk,
+            SUM(CASE WHEN LOWER(ta.description) LIKE '%keluar%' OR LOWER(ta.description) LIKE '%pulang%' THEN 1 ELSE 0 END) AS total_keluar
+         FROM absensi a
+         JOIN tipe_absen ta ON ta.absen_id = a.absen_type_id
+         WHERE a.user_id = ?
+           AND DATE(a.absen_time) = CURDATE()
+           AND (a.status_approval IS NULL OR a.status_approval <> 3)
+           AND ${lemburFilter}`,
+        [user_id]
+    );
+
+    const summary = results[0] || {};
+
+    return {
+        masuk: Number(summary.total_masuk || 0),
+        keluar: Number(summary.total_keluar || 0),
+    };
+};
+
 // Hitung absen masuk hari ini + kemarin, untuk shift cross-midnight
 // (mis. SORE 9 JAM masuk 16:00, keluar 01:00 keesokan harinya)
 const getMasukCountIncludingYesterday = async (user_id) => {
@@ -447,6 +482,7 @@ module.exports={
     cekAbesensiToday,
     cekAbsensiTodayByTimeCategory,
     getTodayAttendanceDirectionSummary,
+    getTodayDirectionSummaryByLembur,
     getMasukCountIncludingYesterday,
     getApprovedMasukCount,
     getRekapKalenderUsers,

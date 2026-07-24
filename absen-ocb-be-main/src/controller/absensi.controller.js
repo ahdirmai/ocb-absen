@@ -1,9 +1,28 @@
 const absensiModel = require("../models/absensi.model");
+const absenManagementModel = require("../models/absenManagement.model");
+const sesiModel = require("../models/absensiSesi.model");
+const dbpool = require("../config/database");
 const moment = require("moment-timezone");
 const fs = require("fs");
 const path = require("path");
 
 const timezone = "Asia/Makassar";
+
+// Ambil tipe absen yang benar-benar di-assign ke user hari ini (regular + lembur).
+// Dipakai untuk otorisasi server-side + penentuan is_lembur dari sumber terpercaya.
+const getAllowedAbsenTypeSets = async (userId) => {
+  const [regularRows] = await absenManagementModel.getTypeAbsenPerShift(userId);
+  const [lemburRows] = await absenManagementModel.getLemburTypes(userId);
+
+  const regular = new Set(
+    (Array.isArray(regularRows) ? regularRows : []).map((r) => String(r.absen_id))
+  );
+  const lembur = new Set(
+    (Array.isArray(lemburRows) ? lemburRows : []).map((r) => String(r.absen_id))
+  );
+
+  return { regular, lembur };
+};
 
 const getUploadedImagePath = (filename) =>
   path.resolve(__dirname, "../../public/images", filename);
@@ -47,10 +66,6 @@ const createAbsensi = async (req, res) => {
     const getUpline = await absensiModel.getUpline(body.user_id);
     const getPotonganLate = await absensiModel.getPotonganLate(idPotongan);
     const upline = getUpline?.upline || null;
-    const isOvertime = String(body.reason || "")
-      .toLowerCase()
-      .includes("lembur");
-    body.is_lembur = (body.is_lembur === 1 || body.is_lembur === "1" || isOvertime) ? 1 : 0;
 
     if (!getTimeDB) {
       removeUploadedImage(file.filename);
@@ -62,9 +77,85 @@ const createAbsensi = async (req, res) => {
       });
     }
 
+    // Otorisasi server-side: tipe absen harus benar di-assign ke user hari ini.
+    // is_lembur ditentukan dari sumber terpercaya (masuk set lembur), bukan teks reason.
+    const allowedTypes = await getAllowedAbsenTypeSets(body.user_id);
+    const submittedTypeId = String(body.absen_type_id);
+    const isRegularType = allowedTypes.regular.has(submittedTypeId);
+    const isLemburType = allowedTypes.lembur.has(submittedTypeId);
+
+    if (!isRegularType && !isLemburType) {
+      removeUploadedImage(file.filename);
+
+      return res.status(403).json({
+        message: "Tipe absen ini tidak tersedia untuk Anda hari ini.",
+        status: "failed",
+        status_code: "403",
+      });
+    }
+
+    // Regular menang: tipe hanya dihitung lembur bila eksklusif di set lembur.
+    body.is_lembur = isLemburType && !isRegularType ? 1 : 0;
+
     const selectedDesc = String(getTimeDB.description || "").toLowerCase();
     const isKeluar =
       selectedDesc.includes("keluar") || selectedDesc.includes("pulang");
+
+    // Hard-guard lembur: lembur hanya boleh setelah shift regular hari ini komplit
+    // (masuk + keluar). Lembur-keluar wajib didahului lembur-masuk.
+    // Baca sesi (dual-path): prefer absensi_sesi, fallback count LIKE utk data pra-sesi.
+    if (body.is_lembur === 1) {
+      const regularSesi = await sesiModel.getTodaySesiSummary(
+        body.user_id,
+        false
+      );
+      // Regular komplit = ada sesi regular closed, ATAU (fallback pra-sesi) count masuk+keluar.
+      let regularComplete = regularSesi.hasClosed;
+      if (!regularComplete && regularSesi.closedCount === 0 && regularSesi.openCount === 0) {
+        const regularToday = await absensiModel.getTodayDirectionSummaryByLembur(
+          body.user_id,
+          false
+        );
+        regularComplete = regularToday.masuk >= 1 && regularToday.keluar >= 1;
+      }
+
+      if (!regularComplete) {
+        removeUploadedImage(file.filename);
+
+        return res.status(400).json({
+          message:
+            "Lembur hanya bisa dilakukan setelah absen masuk dan keluar regular hari ini selesai.",
+          status: "failed",
+          status_code: "400",
+        });
+      }
+
+      if (isKeluar) {
+        const lemburSesi = await sesiModel.getTodaySesiSummary(
+          body.user_id,
+          true
+        );
+        // Lembur masuk ada = sesi lembur open/closed, ATAU (fallback) count masuk lembur.
+        let lemburMasukExists = lemburSesi.hasOpen || lemburSesi.hasClosed;
+        if (!lemburMasukExists) {
+          const lemburToday = await absensiModel.getTodayDirectionSummaryByLembur(
+            body.user_id,
+            true
+          );
+          lemburMasukExists = lemburToday.masuk >= 1;
+        }
+
+        if (!lemburMasukExists) {
+          removeUploadedImage(file.filename);
+
+          return res.status(400).json({
+            message: "Tidak bisa absen keluar lembur sebelum absen masuk lembur.",
+            status: "failed",
+            status_code: "400",
+          });
+        }
+      }
+    }
     // Keluar dini hari (< 12:00) = shift cross-midnight (SORE 9 JAM, SUBUH),
     // masuk-nya tercatat kemarin. Cek masuk hari ini ATAU kemarin.
     const isEarlyMorningKeluar =
@@ -156,25 +247,87 @@ const createAbsensi = async (req, res) => {
     status_approval = body.is_approval == 1 ? 1 : 2;
     const is_valid = body.is_approval == 1 ? 0 : 1;
 
-    const result = await absensiModel.createAbsensi(
-      body,
-      imageUrl,
-      status_absen,
-      status_approval,
-      upline,
-      timeAbsenFull,
-      potongan,
-      is_valid
-    );
+    // Insert absensi + open/close absensi_sesi dalam 1 transaksi (atomic).
+    // Bila sesi gagal → absensi rollback, hindari event tanpa sesi (orphan).
+    const tanggalMasuk = timeAbsenMoment.format("YYYY-MM-DD");
+    const kategoriAbsen = getTimeDB.kategori_absen || null;
 
-    if (!result) {
-      removeUploadedImage(file.filename);
+    const conn = await dbpool.getConnection();
+    let result;
+    try {
+      await conn.beginTransaction();
 
-      return res.status(404).json({
-        message: "Invalid attendance time configuration in the database!!",
-        status: "failed",
-        status_code: "404",
-      });
+      result = await absensiModel.createAbsensi(
+        body,
+        imageUrl,
+        status_absen,
+        status_approval,
+        upline,
+        timeAbsenFull,
+        potongan,
+        is_valid,
+        conn
+      );
+
+      if (!result) {
+        throw new Error("Insert absensi gagal (no result).");
+      }
+
+      const newAbsensiId = result.insertId;
+
+      if (isKeluar) {
+        // Absen keluar → tutup sesi open yang cocok. Bila tak ada → incomplete.
+        const openSesi = await sesiModel.findOpenSesi(conn, {
+          user_id: body.user_id,
+          is_lembur: body.is_lembur,
+          kategori_absen: kategoriAbsen,
+          jadwal_id: null,
+          includeYesterday: isEarlyMorningKeluar,
+        });
+
+        if (openSesi) {
+          await sesiModel.closeSesi(conn, openSesi.sesi_id, newAbsensiId, timeAbsenFull);
+        } else {
+          await sesiModel.createIncompleteSesi(conn, {
+            user_id: body.user_id,
+            tanggal: tanggalMasuk,
+            retail_id: body.retail_id,
+            jadwal_id: null,
+            kategori_absen: kategoriAbsen,
+            keluar_absensi_id: newAbsensiId,
+            is_lembur: body.is_lembur,
+            created_at: timeAbsenFull,
+          });
+        }
+      } else {
+        // Absen masuk → buka sesi baru. Resolve jadwal_id (regular Sales Toko/Trainee).
+        const jadwalId = body.is_lembur
+          ? null
+          : await sesiModel.resolveJadwalId(
+              body.user_id,
+              body.absen_type_id,
+              tanggalMasuk,
+              conn
+            );
+
+        await sesiModel.openSesi(conn, {
+          user_id: body.user_id,
+          tanggal: tanggalMasuk,
+          retail_id: body.retail_id,
+          jadwal_id: jadwalId,
+          kategori_absen: kategoriAbsen,
+          masuk_absensi_id: newAbsensiId,
+          is_lembur: body.is_lembur,
+          created_at: timeAbsenFull,
+        });
+      }
+
+      await conn.commit();
+    } catch (txError) {
+      await conn.rollback();
+      throw txError;
+    } finally {
+      conn.release();
     }
 
     res.json({
@@ -188,7 +341,7 @@ const createAbsensi = async (req, res) => {
         status_absen,
         status_approval,
         potongan,
-        is_overtime: isOvertime ? 1 : 0,
+        is_overtime: body.is_lembur ? 1 : 0,
       },
     });
   } catch (error) {

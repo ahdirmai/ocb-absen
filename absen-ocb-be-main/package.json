@@ -4,7 +4,8 @@
   "description": "Rest API ",
   "main": "index.js",
   "scripts": {
-    "start": "nodemon src/index.js"
+    "start": "nodemon src/index.js",
+    "backup-db": "node scripts/backup-db.js"
   },
   "author": "Ardho Hidayat",
   "license": "ISC",

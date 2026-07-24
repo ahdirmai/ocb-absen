@@ -196,11 +196,21 @@ const getTypeAbsenPerShift = async(req, res) =>{
             isAbsenToday = 0;
         }
 
+        // Bedakan "belum di-assign jadwal" vs "ada tipe absen" untuk pesan FE.
+        const jadwalStatus = await absenManagementModel.getShiftJadwalStatus(userId);
+        const noJadwalAssigned =
+            jadwalStatus.isShiftScheduled &&
+            !jadwalStatus.hasJadwal &&
+            uniqueData.length === 0;
+
         res.json({
-            message: 'Get Detail Absen Type Shift Success',
+            message: noJadwalAssigned
+                ? 'Belum ada jadwal absen yang ditetapkan admin untuk Anda hari ini.'
+                : 'Get Detail Absen Type Shift Success',
             status : "success",
             status_code : "200",
             is_absen_today : isAbsenToday,
+            no_jadwal_assigned : noJadwalAssigned,
             data : uniqueData
         })
     }

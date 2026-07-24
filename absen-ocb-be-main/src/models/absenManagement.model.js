@@ -165,7 +165,9 @@ const getTypeAbsenByJadwal = async (userId) => {
   return dbpool.execute(SQLQuery, [userId]);
 };
 
-// Tipe absen lembur untuk Sales Toko/Trainee: masuk+keluar Pagi saja.
+// Tipe absen lembur HANYA untuk Sales Toko (cat 18): masuk+keluar Pagi saja.
+// Trainee Sales Toko (cat 21) TIDAK boleh lembur — sengaja dikecualikan
+// (id_category IN (18,0) + name NOT LIKE '%TRAINEE%').
 // Exclude absen_masuk_id + absen_keluar_id dari jadwal hari ini (sudah dipakai regular).
 const getLemburTypes = async (userId) => {
   const SQLQuery = `
@@ -217,6 +219,28 @@ const getTypeAbsenPerShift = async (userId) => {
   return getTypeAbsenByCategory(userId);
 };
 
+// Status jadwal harian: bedakan "belum di-assign admin" vs kategori non-shift.
+// Dipakai controller untuk pesan eksplisit saat daftar tipe absen kosong.
+const getShiftJadwalStatus = async (userId) => {
+  const [users] = await dbpool.query(
+    "SELECT category_user FROM user WHERE user_id = ?",
+    [userId]
+  );
+  const category = Number(users[0]?.category_user);
+  const isShiftScheduled = SHIFT_SCHEDULED_CATEGORIES.includes(category);
+
+  if (!isShiftScheduled) {
+    return { isShiftScheduled: false, hasJadwal: false };
+  }
+
+  const [jadwalRows] = await dbpool.query(
+    "SELECT id FROM jadwal_harian WHERE user_id = ? AND tanggal = CURDATE() AND is_deleted = 0 LIMIT 1",
+    [userId]
+  );
+
+  return { isShiftScheduled: true, hasJadwal: jadwalRows.length > 0 };
+};
+
 const checkFlagAbsen = async (user_id) => {
   const [user] = await dbpool.query(
     "SELECT absensi_id FROM absensi WHERE user_id = ? AND DATE(absen_time) = CURDATE()",
@@ -226,8 +250,8 @@ const checkFlagAbsen = async (user_id) => {
 };
 
 const getTypeAbsen = async (absenId) => {
-  const SQLQuery = `SELECT * FROM tipe_absen where absen_id =${absenId}`;
-  return dbpool.execute(SQLQuery);
+  const SQLQuery = `SELECT * FROM tipe_absen where absen_id = ?`;
+  return dbpool.execute(SQLQuery, [absenId]);
 };
 
 const getTypeAbsenWithGroups = async () => {
@@ -384,6 +408,7 @@ module.exports = {
   updateAbsenType2,
   deleteTypeAbsen,
   getTypeAbsenPerShift,
+  getShiftJadwalStatus,
   getLemburTypes,
   checkFlagAbsen,
   createNewGroupAbsen,
