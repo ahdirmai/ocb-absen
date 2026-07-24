@@ -335,9 +335,10 @@ const AbsenKaryawan = () => {
   }, [effectiveLemburMode, history]);
 
   const filteredLemburTypes = useMemo(() => {
-    if (!effectiveLemburMode) return lemburTypes;
+    if (!effectiveLemburMode) return [];
+    if (!lemburDirection) return []; // kedua arah selesai → kosong
     return lemburTypes.filter((t) => {
-      if (lemburDirection && getAbsenDirection(t) !== lemburDirection) return false;
+      if (getAbsenDirection(t) !== lemburDirection) return false;
       if (!isWithinShiftWindow(t.kategori_absen)) return false;
       // Lembur keluar: match name dengan lembur masuk dari history.
       if (lemburDirection === "keluar") {
@@ -1281,28 +1282,32 @@ const AbsenKaryawan = () => {
         })}
       </div>
 
-      {todayOvertimeItems.length > 0 && (
-        <div
-          style={{
-            background: "#fff4e5",
-            border: "1px solid #f39c12",
-            borderRadius: "12px",
-            padding: "14px",
-            marginBottom: "15px",
-          }}
-        >
-          <p style={{ margin: "0 0 6px", fontWeight: "bold", color: "#d35400" }}>
-            Sedang Lembur
-          </p>
-          <p style={{ margin: 0, fontSize: "13px", color: "#7f4f00" }}>
-            Ada {todayOvertimeItems.length} data lembur hari ini. Status terbaru: {getAttendanceStatusLabel(todayOvertimeItems[0])}
-            {todayOvertimeItems[0]?.absen_time
-              ? ` pukul ${format(new Date(todayOvertimeItems[0].absen_time), "HH:mm", { locale: localeId })}`
-              : ""}
-            .
-          </p>
-        </div>
-      )}
+      {(() => {
+        const activeOvertime = todayOvertimeItems.filter((item) => !isRejectedAttendance(item));
+        if (activeOvertime.length === 0) return null;
+        return (
+          <div
+            style={{
+              background: "#fff4e5",
+              border: "1px solid #f39c12",
+              borderRadius: "12px",
+              padding: "14px",
+              marginBottom: "15px",
+            }}
+          >
+            <p style={{ margin: "0 0 6px", fontWeight: "bold", color: "#d35400" }}>
+              Sedang Lembur
+            </p>
+            <p style={{ margin: 0, fontSize: "13px", color: "#7f4f00" }}>
+              Ada {activeOvertime.length} data lembur hari ini. Status terbaru: {getAttendanceStatusLabel(activeOvertime[0])}
+              {activeOvertime[0]?.absen_time
+                ? ` pukul ${format(new Date(activeOvertime[0].absen_time), "HH:mm", { locale: localeId })}`
+                : ""}
+              .
+            </p>
+          </div>
+        );
+      })()}
 
       {filteredLemburTypes.length > 0 && !effectiveLemburMode && !attendanceMode && (
         <button
@@ -1327,7 +1332,7 @@ const AbsenKaryawan = () => {
         </button>
       )}
 
-      {effectiveLemburMode && (
+      {effectiveLemburMode && filteredLemburTypes.length > 0 && (
         <div
           style={{
             background: "#fff4e5",
