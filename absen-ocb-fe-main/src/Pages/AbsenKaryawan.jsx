@@ -285,9 +285,41 @@ const AbsenKaryawan = () => {
     [history]
   );
 
+  // Ada absen pending (menunggu approval) hari ini → blokir attempt baru.
+  const todayHasPending = useMemo(() => {
+    return history.some((item) => {
+      if (!isSameLocalDate(item.absen_time)) return false;
+      if (isRejectedAttendance(item)) return false;
+      const approvalStr = String(item.status_approval || "").toLowerCase();
+      return (
+        item.status_approval === "1" ||
+        item.status_approval === 1 ||
+        approvalStr.includes("waiting") ||
+        approvalStr.includes("menunggu") ||
+        approvalStr.includes("pending")
+      );
+    });
+  }, [history]);
+
+  // Lock mode: jika sudah ada absen hari ini → mode terkunci (lembur/regular).
+  const attendanceMode = useMemo(() => {
+    const todayItems = history.filter(
+      (item) => isSameLocalDate(item.absen_time) && !isRejectedAttendance(item)
+    );
+    const hasLembur = todayItems.some((item) => item.is_lembur === 1 || item.is_lembur === "1");
+    const hasRegular = todayItems.some((item) => item.is_lembur !== 1 && item.is_lembur !== "1");
+    if (hasLembur && !hasRegular) return "lembur";
+    if (hasRegular && !hasLembur) return "regular";
+    if (hasRegular && hasLembur) return "mixed";
+    return null;
+  }, [history]);
+
+  // Mode terkunci: jika sudah ada absen hari ini, mode tak bisa diganti.
+  const effectiveLemburMode = attendanceMode === "lembur" || (attendanceMode === null && isLemburMode);
+
   // Lembur: filter tipe sesuai attempt. Jika belum ada lembur masuk → tampilkan masuk. Jika sudah → tampilkan keluar.
   const lemburDirection = useMemo(() => {
-    if (!isLemburMode) return "";
+    if (!effectiveLemburMode) return "";
     const todayLembur = history.filter(
       (item) => (item.is_lembur === 1 || item.is_lembur === "1") && isSameLocalDate(item.absen_time)
     );
@@ -300,17 +332,17 @@ const AbsenKaryawan = () => {
     if (!lemburMasukDone) return "masuk";
     if (!lemburKeluarDone) return "keluar";
     return "";
-  }, [isLemburMode, history]);
+  }, [effectiveLemburMode, history]);
 
   const filteredLemburTypes = useMemo(() => {
-    if (!isLemburMode) return lemburTypes;
+    if (!effectiveLemburMode) return lemburTypes;
     return lemburTypes.filter((t) => {
       if (lemburDirection && getAbsenDirection(t) !== lemburDirection) return false;
       return isWithinShiftWindow(t.kategori_absen);
     });
-  }, [isLemburMode, lemburDirection, lemburTypes]);
+  }, [effectiveLemburMode, lemburDirection, lemburTypes]);
 
-  const activeTypes = isLemburMode ? filteredLemburTypes : absenTypes;
+  const activeTypes = effectiveLemburMode ? filteredLemburTypes : absenTypes;
 
   const selectedTypeDetail = useMemo(
     () =>
@@ -321,7 +353,7 @@ const AbsenKaryawan = () => {
   );
 
   const locationStatus = useMemo(() => {
-    const retailSource = isLemburMode && selectedLemburRetail
+    const retailSource = effectiveLemburMode && selectedLemburRetail
       ? selectedLemburRetail
       : selectedTypeDetail;
     if (!hasLocation || !retailSource) return null;
@@ -330,11 +362,11 @@ const AbsenKaryawan = () => {
     const jarak = hitungJarak(location.latitude, location.longitude, Number(retLat), Number(retLon));
     const dalamRadius = jarak <= Number(radius);
     return { dalamRadius, jarak: Math.round(jarak), radius: Number(radius), retail_name: retailName || retail_name };
-  }, [hasLocation, location, selectedTypeDetail, isLemburMode, selectedLemburRetail]);
+  }, [hasLocation, location, selectedTypeDetail, effectiveLemburMode, selectedLemburRetail]);
 
   // Auto-select tipe lembur pertama saat direction berubah (masuk → keluar)
   useEffect(() => {
-    if (isLemburMode && filteredLemburTypes.length > 0) {
+    if (effectiveLemburMode && filteredLemburTypes.length > 0) {
       const currentStillValid = filteredLemburTypes.some(
         (t) => String(t.absen_id) === String(selectedAbsenType)
       );
@@ -342,7 +374,7 @@ const AbsenKaryawan = () => {
         setSelectedAbsenType(String(filteredLemburTypes[0].absen_id));
       }
     }
-  }, [isLemburMode, filteredLemburTypes, selectedAbsenType]);
+  }, [effectiveLemburMode, filteredLemburTypes, selectedAbsenType]);
 
   // Fetch lembur types when user has an assigned shift (jadwal)
   useEffect(() => {
@@ -402,7 +434,7 @@ const AbsenKaryawan = () => {
     ? todayAttendanceStatus[currentAttemptDirection]
     : null;
   const isOvertimeAttempt = Boolean(
-    isLemburMode ||
+    effectiveLemburMode ||
     (hasCompletedRegularAttendance &&
     currentAttemptDirection &&
       currentAttemptBaseAttendance &&
@@ -872,7 +904,7 @@ const AbsenKaryawan = () => {
       const lemburTypeName = selectedTypeDetail?.name || currentAttemptDirection;
       const confirmation = await Swal.fire({
         title: "Konfirmasi Lembur",
-        text: isLemburMode
+        text: effectiveLemburMode
           ? `Absen lembur dengan tipe "${lemburTypeName}". Absen ini perlu approval atasan. Lanjutkan?`
           : `${currentAttemptLabel} lembur akan memakai tipe absen dengan deskripsi ${currentAttemptDirection}. Absen ini perlu approval atasan. Lanjutkan?`,
         icon: "warning",
@@ -892,7 +924,7 @@ const AbsenKaryawan = () => {
     try {
       const formData = new FormData();
       formData.append("user_id", authData.userId);
-      const submitRetailId = isLemburMode && selectedLemburRetail
+      const submitRetailId = effectiveLemburMode && selectedLemburRetail
         ? selectedLemburRetail.retail_id
         : selectedTypeDetail.retail_id;
       formData.append("retail_id", submitRetailId);
@@ -917,7 +949,7 @@ const AbsenKaryawan = () => {
 
       formData.append("reason", reasonParts.join("; "));
       formData.append("is_approval", isOutsideRadius || isOvertimeAttempt ? 1 : 0);
-      if (isLemburMode) {
+      if (effectiveLemburMode) {
         formData.append("is_lembur", "1");
       }
       formData.append("photo_url", photo);
@@ -980,7 +1012,8 @@ const AbsenKaryawan = () => {
     Boolean(photo) &&
     hasLocation &&
     Boolean(selectedAbsenType) &&
-    (!isLemburMode || Boolean(selectedLemburRetail)) &&
+    (!effectiveLemburMode || Boolean(selectedLemburRetail)) &&
+    !todayHasPending &&
     !loading &&
     !loginLoading;
 
@@ -1238,7 +1271,7 @@ const AbsenKaryawan = () => {
         </div>
       )}
 
-      {filteredLemburTypes.length > 0 && !isLemburMode && (
+      {filteredLemburTypes.length > 0 && !effectiveLemburMode && !attendanceMode && (
         <button
           onClick={() => {
             setIsLemburMode(true);
@@ -1261,7 +1294,7 @@ const AbsenKaryawan = () => {
         </button>
       )}
 
-      {isLemburMode && (
+      {effectiveLemburMode && (
         <div
           style={{
             background: "#fff4e5",
@@ -1340,11 +1373,11 @@ const AbsenKaryawan = () => {
         }}
       >
         <p style={{ margin: 0, fontWeight: "bold", color: isOvertimeAttempt ? "#d35400" : currentAttemptDirection ? "#2471a3" : "#777" }}>
-          {isLemburMode ? "Mode Lembur" : isOvertimeAttempt ? "Attempt Lembur" : "Attempt Aktif"}: {selectedTypeDetail ? currentAttemptLabel : "Belum ada tipe absen yang dipilih"}
+          {effectiveLemburMode ? "Mode Lembur" : isOvertimeAttempt ? "Attempt Lembur" : "Attempt Aktif"}: {selectedTypeDetail ? currentAttemptLabel : "Belum ada tipe absen yang dipilih"}
         </p>
         {isOvertimeAttempt && (
           <p style={{ margin: "8px 0 0", fontSize: "13px", color: "#d35400", fontWeight: "bold" }}>
-            {isLemburMode && selectedTypeDetail
+            {effectiveLemburMode && selectedTypeDetail
               ? `Tipe: ${selectedTypeDetail.name} — perlu approval atasan.`
               : "Akan dihitung lembur dan perlu approval atasan."}
           </p>
@@ -1367,7 +1400,7 @@ const AbsenKaryawan = () => {
             ? `(${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)})`
             : "(Belum aktif)"}
         </p>
-        {isLemburMode && (
+        {effectiveLemburMode && (
           <p style={{ margin: "5px 0", color: selectedLemburRetail ? "green" : "red" }}>
             {selectedLemburRetail ? "Siap" : "Belum"} Lokasi Lembur{" "}
             {selectedLemburRetail ? `(${selectedLemburRetail.name})` : "(Belum dipilih)"}
@@ -1387,11 +1420,11 @@ const AbsenKaryawan = () => {
         <p
           style={{
             margin: "5px 0",
-            color: isLemburMode ? "#d35400" : isOvertimeAttempt ? "#d35400" : selectedAbsenType ? "green" : "red",
+            color: effectiveLemburMode ? "#d35400" : isOvertimeAttempt ? "#d35400" : selectedAbsenType ? "green" : "red",
           }}
         >
           {selectedAbsenType ? "Siap" : "Belum"} Tipe Absen{" "}
-          {isLemburMode
+          {effectiveLemburMode
             ? "(Lembur, perlu approval)"
             : isOvertimeAttempt
               ? "(Lembur, perlu approval)"
@@ -1453,7 +1486,7 @@ const AbsenKaryawan = () => {
             return (
               <option key={type.absen_id} value={type.absen_id}>
                 {type.name}
-                {!isLemburMode && type.retail_name ? ` - ${type.retail_name}` : ""}
+                {!effectiveLemburMode && type.retail_name ? ` - ${type.retail_name}` : ""}
                 {isOvertimeOption ? " (Lembur)" : ""}
               </option>
             );
@@ -1461,7 +1494,7 @@ const AbsenKaryawan = () => {
         </select>
         {activeTypes.length === 0 && (
           <p style={{ marginTop: "8px", color: "#c0392b", fontSize: "14px" }}>
-            {isLemburMode
+            {effectiveLemburMode
               ? "Tidak ada tipe absen lembur yang tersedia."
               : "Tipe absen untuk shift ini belum ditemukan."}
           </p>
@@ -1601,12 +1634,15 @@ const AbsenKaryawan = () => {
         <p
           style={{
             textAlign: "center",
-            color: "#e74c3c",
+            color: todayHasPending ? "#f39c12" : "#e74c3c",
             marginTop: "10px",
             fontSize: "14px",
+            fontWeight: todayHasPending ? "bold" : "normal",
           }}
         >
-          Lengkapi semua checklist di atas untuk submit absen.
+          {todayHasPending
+            ? "Ada absen yang masih menunggu approval. Tidak bisa absen lagi sampai di-approve atau di-reject."
+            : "Lengkapi semua checklist di atas untuk submit absen."}
         </p>
       )}
 
