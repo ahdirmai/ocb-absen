@@ -338,9 +338,21 @@ const AbsenKaryawan = () => {
     if (!effectiveLemburMode) return lemburTypes;
     return lemburTypes.filter((t) => {
       if (lemburDirection && getAbsenDirection(t) !== lemburDirection) return false;
-      return isWithinShiftWindow(t.kategori_absen);
+      if (!isWithinShiftWindow(t.kategori_absen)) return false;
+      // Lembur keluar: match name dengan lembur masuk dari history.
+      if (lemburDirection === "keluar") {
+        const lemburMasuk = history.find(
+          (item) =>
+            (item.is_lembur === 1 || item.is_lembur === "1") &&
+            isSameLocalDate(item.absen_time) &&
+            getAbsenDirection(item) === "masuk" &&
+            !isRejectedAttendance(item)
+        );
+        if (lemburMasuk && t.name !== lemburMasuk.category_absen) return false;
+      }
+      return true;
     });
-  }, [effectiveLemburMode, lemburDirection, lemburTypes]);
+  }, [effectiveLemburMode, lemburDirection, lemburTypes, history]);
 
   const activeTypes = effectiveLemburMode ? filteredLemburTypes : absenTypes;
 
