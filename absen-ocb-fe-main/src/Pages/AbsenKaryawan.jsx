@@ -314,8 +314,19 @@ const AbsenKaryawan = () => {
     return null;
   }, [history]);
 
-  // Mode terkunci: jika sudah ada absen hari ini, mode tak bisa diganti.
-  const effectiveLemburMode = attendanceMode === "lembur" || (attendanceMode === null && isLemburMode);
+  // Cek apakah lembur sudah selesai (masuk+keluar keduanya ada).
+  const lemburComplete = useMemo(() => {
+    if (attendanceMode !== "lembur") return false;
+    const todayLembur = history.filter(
+      (item) => (item.is_lembur === 1 || item.is_lembur === "1") && isSameLocalDate(item.absen_time) && !isRejectedAttendance(item)
+    );
+    const masukDone = todayLembur.some((item) => getAbsenDirection(item) === "masuk");
+    const keluarDone = todayLembur.some((item) => getAbsenDirection(item) === "keluar");
+    return masukDone && keluarDone;
+  }, [attendanceMode, history]);
+
+  // Mode terkunci: lembur aktif TAPI belum selesai. Setelah selesai → unlock ke regular.
+  const effectiveLemburMode = (attendanceMode === "lembur" && !lemburComplete) || (attendanceMode === null && isLemburMode);
 
   // Lembur: filter tipe sesuai attempt. Jika belum ada lembur masuk → tampilkan masuk. Jika sudah → tampilkan keluar.
   const lemburDirection = useMemo(() => {
