@@ -53,6 +53,8 @@ node src/index.js
 
 > **Absen telat (Sales Toko/Trainee):** Absen lewat `end_time` → `status_approval=1` (waiting). Keluar diblok sampai masuk di-approve.
 
+> **Window absen masuk (semua jalur):** Absen masuk hanya boleh dalam window: paling awal **1 jam sebelum** `start_time`, paling akhir **sebelum jam pulang** shift (= `start_time` tipe KELUAR pasangan, match by `name`). Lewat batas → HTTP 400. Cross-date (`is_cross_date=1`, keluar besok) tak kena batas atas. Ex: PAGI masuk 08:00 pulang 17:00 → masuk hanya 07:00–16:59. Berlaku jadwal-harian, lembur, DAN non-jadwal (retail biasa). Enforcement BE.
+
 > **Koreksi Absen (admin):** Admin ubah `absen_time`/`status_absen`/`reason` 1 baris. Sistem recompute `status_absen` (ontime/telat vs `end_time`) + `potongan` (telat >15mnt) dari waktu baru — kecuali admin override status eksplisit. Bila baris = `masuk_absensi_id` sesi & jam geser tanggal → `absensi_sesi.tanggal` ikut update. Audit `updated_by`/`updated_at` + `log_activity` (old→new). Transaksional. Tipe absen & retail tak diubah.
 
 > **Lembur (Sales Toko):** User bisa lembur (gantikan karyawan toko lain) pakai tipe shift beda, pilih OC → submit → `is_lembur=1` + approval. Trainee dikecualikan.

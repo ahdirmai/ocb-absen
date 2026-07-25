@@ -3,6 +3,18 @@
 ## [Unreleased]
 
 ### Added
+- **Android app web-parity (layar attempt absen)** (`absen-ocb-apps-main`, native Java) — port logika keputusan dari web `AbsenKaryawan.jsx`. Home & History tak disentuh.
+  - `AbsenLogic.java` (baru): ~15 helper port dari web (direction, isSameLocalDate, isRejected, cross-date deadline+grace 3h, findOpenRegularMasuk, buildTodayAttendanceStatus, nextRegularDirection, attendanceMode, hasTodayForTimeCategory, checkEarlyMasuk window 60mnt, haversine). `HistoryItem.java` (baru): model history dgn sesi_status/sesi_direction/is_lembur/is_cross_date/keluar_start_time.
+  - `AbsensiActivity`: fetch berantai history→shift-user→lembur-types→retail; arah-aware (tampilkan hanya tipe arah berikutnya masuk/keluar, cross-date SUBUH diarahkan keluar); buang gate `is_absen_today` per-baris. Mode lembur: tombol "Mulai Lembur" (muncul bila regular komplit/jadwal non-mid-shift), spinner OC (retail picker), list ganti tipe lembur komplemen.
+  - `AbsenAdapter`: icon per-arah, teruskan `is_lembur`+`start_time`+retail OC lembur via intent, sembunyikan retail item saat mode lembur (OC dari spinner). `AbsenActivity`: baca+kirim `is_lembur`, pre-check early-masuk. `AbsenItem` +is_cross_date/keluar_start_time/is_lembur.
+  - `build.gradle` versionCode 1→2 (upgrade-install timpa). Endpoint via `Constant.java` (prod default).
+
+### Changed
+- **Guard window absen masuk diperluas ke SEMUA jalur + batas atas jam pulang** (`absensi.controller.js`) — sebelumnya batas 1-jam-sebelum hanya jadwal-harian + lembur.
+  - Sekarang non-jadwal (retail biasa) juga kena batas bawah (1 jam sebelum `start_time`).
+  - **Batas atas baru**: absen masuk ditolak bila sudah lewat JAM PULANG shift (= `start_time` tipe KELUAR pasangan, match by `name`, helper `getKeluarStartTimeByName`). Cross-date (keluar besok) skip batas atas. Ex: PAGI masuk 08:00 pulang 17:00 → masuk hanya 07:00-16:59; jam 17:00+ ditolak. Enforcement BE only.
+
+### Added
 - **UI/UX baru halaman Absensi (toggle Lama/Baru)** (`Absensi.jsx`) — tampilan modern clean, akses via toggle segmented di header (persist `localStorage`, default Baru). UI lama tetap utuh (`uiMode='lama'`). FE only, tak sentuh BE/route/DB.
   - Stat cards (Total/Ontime/Telat/Lembur), toolbar rapi (search global multi-field + date range + Export + quick-filter chip Valid/Invalid/Telat/Lembur), DataTable modern (sortable, badge status pill berwarna, badge Lembur, foto thumbnail, aksi ikon+tooltip, sticky header, empty/loading state).
   - Reuse penuh handler existing (validasi/ignore/koreksi/export/preview) + modal — nol duplikasi logika.

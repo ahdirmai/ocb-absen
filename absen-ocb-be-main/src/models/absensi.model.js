@@ -59,6 +59,21 @@ const getUpline = async (user_id) => {
 
 }
 
+// Jam pulang shift = start_time tipe KELUAR pasangan (match by name). Dipakai
+// batas atas absen masuk (tak boleh masuk bila shift sudah usai). Return "HH:mm:ss"
+// atau null bila tak ada pasangan.
+const getKeluarStartTimeByName = async (name) => {
+    if (!name) return null;
+    const [rows] = await dbpool.query(
+        `SELECT start_time FROM tipe_absen
+         WHERE name = ? AND is_deleted = 0
+           AND (LOWER(description) LIKE '%keluar%' OR LOWER(description) LIKE '%pulang%')
+         ORDER BY absen_id LIMIT 1`,
+        [name]
+    );
+    return rows.length > 0 ? rows[0].start_time : null;
+}
+
 const getPotonganLate = async (idPotongan) => {
     const [potongan] = await dbpool.query('SELECT value FROM potongan WHERE id = ? ', [idPotongan]);
     return potongan[0];
@@ -516,6 +531,7 @@ module.exports={
     listAbsensiApproval,
     totalAbsenPerMonth,
     getTimeDB,
+    getKeluarStartTimeByName,
     getUpline,
     approveAbsen,
     rejectAbsen,

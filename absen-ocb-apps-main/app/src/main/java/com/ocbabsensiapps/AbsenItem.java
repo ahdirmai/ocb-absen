@@ -14,6 +14,9 @@ public class AbsenItem {
     private String retail_name;
     private String is_absen_today;
     private String kategori_absen; // Tambahkan field ini
+    private int is_cross_date;         // 0/1 — shift lintas hari (keluar besok)
+    private String keluar_start_time;  // "HH:mm" tipe keluar pasangan (nullable)
+    private int is_lembur;             // 0/1 — tipe ini dari daftar lembur
 
     // Constructor
     public AbsenItem(String absen_id, String name, String description, String retail_id, String latitude, String longitude, String radius, String start_time, String end_time, String retail_name, String is_absen_today, String kategori_absen) {
@@ -29,7 +32,19 @@ public class AbsenItem {
         this.retail_name = retail_name;
         this.is_absen_today = is_absen_today;
         this.kategori_absen = kategori_absen; // Inisialisasi field kategori_absen
+        this.is_cross_date = 0;
+        this.keluar_start_time = null;
+        this.is_lembur = 0;
     }
+
+    public int getIs_cross_date() { return is_cross_date; }
+    public void setIs_cross_date(int is_cross_date) { this.is_cross_date = is_cross_date; }
+
+    public String getKeluar_start_time() { return keluar_start_time; }
+    public void setKeluar_start_time(String keluar_start_time) { this.keluar_start_time = keluar_start_time; }
+
+    public int getIs_lembur() { return is_lembur; }
+    public void setIs_lembur(int is_lembur) { this.is_lembur = is_lembur; }
 
     // Getter untuk kategori_absen
     public String getKategori_absen() {

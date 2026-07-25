@@ -278,21 +278,13 @@ const createAbsensi = async (req, res) => {
     const timeAbsenMomentFormatted = timeAbsenMoment.format("HH:mm:ss");
     const potonganLate = Number(getPotonganLate?.value || 0);
 
-    // Absen MASUK hanya boleh mulai 1 jam sebelum jam masuk (start_time).
-    // Ex: start_time 15:00 -> paling awal boleh absen 14:00. Sebelum itu ditolak.
-    // Telat (setelah start_time) tetap boleh (ditangani status_absen di bawah).
-    // Keluar & tipe non-masuk (kebersihan/parkir) tak kena guard ini.
-    // Berlaku untuk:
-    //   - Regular jalur jadwal harian (uses_jadwal_harian aktif).
-    //   - LEMBUR masuk (semua Sales Toko) — gantikan filter window FE lama.
-    // User non-jadwal REGULAR (retail biasa) tetap tak dibatasi.
-    const isJadwalHarianRegular =
-      !body.is_lembur &&
-      (await absenManagementModel.userUsesJadwalHarian(body.user_id));
-    const applyEarlyMasukGuard =
-      isMasuk && !isKeluar && (isJadwalHarianRegular || body.is_lembur === 1);
-
-    if (applyEarlyMasukGuard) {
+    // Guard window absen MASUK — berlaku untuk SEMUA jalur (jadwal-harian,
+    // lembur, non-jadwal retail biasa). Keluar & tipe non-masuk tak kena.
+    //   BATAS BAWAH: hanya boleh mulai 1 jam sebelum start_time (ex 15:00 → 14:00).
+    //   BATAS ATAS : tak boleh masuk bila sudah lewat JAM PULANG shift
+    //                (start_time tipe KELUAR pasangan). Percuma masuk kalau shift
+    //                sudah usai. Cross-date (keluar besok) TAK kena batas atas.
+    if (isMasuk && !isKeluar) {
       const EARLY_MASUK_WINDOW_MINUTES = 60;
       const toMinutes = (hhmmss) => {
         const [h, m] = String(hhmmss).split(":").map((n) => parseInt(n, 10));
@@ -306,9 +298,9 @@ const createAbsensi = async (req, res) => {
       if (minutesUntilStart > 720) minutesUntilStart -= 1440;
       if (minutesUntilStart < -720) minutesUntilStart += 1440;
 
+      // Batas bawah: terlalu awal (>1 jam sebelum start).
       if (minutesUntilStart > EARLY_MASUK_WINDOW_MINUTES) {
         removeUploadedImage(file.filename);
-
         return res.status(400).json({
           message: `Absen masuk baru dibuka 1 jam sebelum jam masuk (${startTimeDBMoment.slice(
             0,
@@ -319,6 +311,32 @@ const createAbsensi = async (req, res) => {
           status: "failed",
           status_code: "400",
         });
+      }
+
+      // Batas atas: sudah lewat jam pulang shift. Skip untuk cross-date
+      // (keluar jatuh besok, jadi hari masuk tak mungkin "lewat pulang").
+      if (Number(getTimeDB.is_cross_date) !== 1) {
+        const keluarStart = await absensiModel.getKeluarStartTimeByName(
+          getTimeDB.name
+        );
+        if (keluarStart) {
+          const keluarStartFmt = moment
+            .tz(keluarStart, "HH:mm:ss", timezone)
+            .format("HH:mm:ss");
+          const keluarMin = toMinutes(keluarStartFmt);
+          // Sudah lewat jam pulang bila now >= jam pulang (same-day shift).
+          if (nowMin >= keluarMin) {
+            removeUploadedImage(file.filename);
+            return res.status(400).json({
+              message: `Shift ini sudah berakhir (jam pulang ${keluarStartFmt.slice(
+                0,
+                5
+              )}). Absen masuk tidak bisa dilakukan.`,
+              status: "failed",
+              status_code: "400",
+            });
+          }
+        }
       }
     }
 
