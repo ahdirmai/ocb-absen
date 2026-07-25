@@ -17,6 +17,9 @@ const Absensi = () => {
   const [loading, setLoading] = useState(false);
   const [selectedImageAbsensi, setSelectedImageAbsensi] = useState(null);
   const [isModalOpenAbsensi, setIsModalOpenAbsensi] = useState(false);
+  const [selectedKoreksi, setSelectedKoreksi] = useState(null);
+  const [koreksiModalVisible, setKoreksiModalVisible] = useState(false);
+  const [savingKoreksi, setSavingKoreksi] = useState(false);
   const [startDate, setStartDate] = useState(""); // Tanggal mulai
   const [endDate, setEndDate] = useState(""); // Tanggal akhir
   const [filterText, setFilterText] = useState({
@@ -178,6 +181,74 @@ const Absensi = () => {
         Swal.fire("Error!", error.response?.data?.message || error.message, "error");
       }
     });
+  };
+
+  // Buka modal koreksi: prefill jam (datetime-local), status, catatan.
+  const handleKoreksi = (row) => {
+    setSelectedKoreksi({
+      absensi_id: row.absensi_id,
+      nama_karyawan: row.nama_karyawan,
+      category_absen: row.category_absen,
+      // datetime-local butuh "yyyy-MM-dd'T'HH:mm".
+      absen_time_local: row.absen_time
+        ? format(new Date(row.absen_time), "yyyy-MM-dd'T'HH:mm")
+        : "",
+      status_absen: String(row.status_absen ?? ""),
+      reason: row.reason || "",
+    });
+    setKoreksiModalVisible(true);
+  };
+
+  const handleSaveKoreksi = async () => {
+    if (!selectedKoreksi?.absen_time_local) {
+      Swal.fire("Error", "Waktu absen wajib diisi.", "error");
+      return;
+    }
+    setSavingKoreksi(true);
+    try {
+      const token = localStorage.getItem("token");
+      const headers = { Authorization: `Bearer ${token}` };
+      // datetime-local "yyyy-MM-ddTHH:mm" → "yyyy-MM-dd HH:mm:ss" untuk BE.
+      const absen_time = format(
+        new Date(selectedKoreksi.absen_time_local),
+        "yyyy-MM-dd HH:mm:ss"
+      );
+      const payload = {
+        absen_time,
+        reason: selectedKoreksi.reason,
+      };
+      // status_absen opsional: kirim hanya bila admin set eksplisit (1/2).
+      if (selectedKoreksi.status_absen === "1" || selectedKoreksi.status_absen === "2") {
+        payload.status_absen = Number(selectedKoreksi.status_absen);
+      }
+
+      const res = await axios.post(
+        `${VITE_API_URL}/absensi/koreksi/${selectedKoreksi.absensi_id}`,
+        payload,
+        { headers }
+      );
+
+      const updated = res.data.data;
+      setAbsensies((prev) =>
+        prev.map((item) =>
+          item.absensi_id === selectedKoreksi.absensi_id
+            ? {
+                ...item,
+                absen_time: updated.absen_time,
+                status_absen: updated.status_absen,
+                reason: updated.reason,
+              }
+            : item
+        )
+      );
+      Swal.fire("Berhasil!", res.data.message || "Koreksi tersimpan.", "success");
+      setKoreksiModalVisible(false);
+      setSelectedKoreksi(null);
+    } catch (error) {
+      Swal.fire("Error!", error.response?.data?.message || error.message, "error");
+    } finally {
+      setSavingKoreksi(false);
+    }
   };
 
   const columns = [
@@ -438,6 +509,20 @@ const Absensi = () => {
           </button>
         ),
     },
+    {
+      name: (
+        <span style={{ marginBottom: "45px" }}>Koreksi</span>
+      ),
+      cell: (row) => (
+        <button
+          className="btn btn-sm btn-gradient-info"
+          onClick={() => handleKoreksi(row)}
+          title="Koreksi jam / status / catatan absen"
+        >
+          Koreksi
+        </button>
+      ),
+    },
   ];
 
   useEffect(() => {
@@ -638,6 +723,113 @@ const Absensi = () => {
               onClick={(e) => e.stopPropagation()} // Prevent close on image click
             />
           )}
+        </div>
+      )}
+
+      {koreksiModalVisible && selectedKoreksi && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            backgroundColor: "rgba(0, 0, 0, 0.6)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 1000,
+          }}
+          onClick={() => setKoreksiModalVisible(false)}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: "10px",
+              padding: "20px",
+              width: "420px",
+              maxWidth: "92%",
+              maxHeight: "88vh",
+              overflowY: "auto",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h5 style={{ marginTop: 0, marginBottom: "4px" }}>Koreksi Absen</h5>
+            <p style={{ margin: "0 0 14px", fontSize: "13px", color: "#666" }}>
+              {selectedKoreksi.nama_karyawan} — {selectedKoreksi.category_absen}
+            </p>
+
+            <div className="form-group" style={{ marginBottom: "12px" }}>
+              <label style={{ fontWeight: 600, fontSize: "13px" }}>Waktu Absen</label>
+              <input
+                type="datetime-local"
+                className="form-control"
+                value={selectedKoreksi.absen_time_local}
+                onChange={(e) =>
+                  setSelectedKoreksi({
+                    ...selectedKoreksi,
+                    absen_time_local: e.target.value,
+                  })
+                }
+              />
+            </div>
+
+            <div className="form-group" style={{ marginBottom: "12px" }}>
+              <label style={{ fontWeight: 600, fontSize: "13px" }}>
+                Status{" "}
+                <span style={{ fontWeight: 400, color: "#888" }}>
+                  (kosongkan = hitung otomatis dari jam)
+                </span>
+              </label>
+              <select
+                className="form-control"
+                value={selectedKoreksi.status_absen}
+                onChange={(e) =>
+                  setSelectedKoreksi({
+                    ...selectedKoreksi,
+                    status_absen: e.target.value,
+                  })
+                }
+              >
+                <option value="">Otomatis (dari jam)</option>
+                <option value="1">Ontime</option>
+                <option value="2">Telat</option>
+              </select>
+            </div>
+
+            <div className="form-group" style={{ marginBottom: "16px" }}>
+              <label style={{ fontWeight: 600, fontSize: "13px" }}>Catatan</label>
+              <textarea
+                className="form-control"
+                rows={3}
+                value={selectedKoreksi.reason}
+                onChange={(e) =>
+                  setSelectedKoreksi({
+                    ...selectedKoreksi,
+                    reason: e.target.value,
+                  })
+                }
+                placeholder="Catatan koreksi..."
+              />
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+              <button
+                className="btn btn-light"
+                onClick={() => setKoreksiModalVisible(false)}
+                disabled={savingKoreksi}
+              >
+                Batal
+              </button>
+              <button
+                className="btn btn-gradient-primary"
+                onClick={handleSaveKoreksi}
+                disabled={savingKoreksi}
+              >
+                {savingKoreksi ? "Menyimpan..." : "Simpan Koreksi"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

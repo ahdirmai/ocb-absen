@@ -47,10 +47,13 @@ node src/index.js
 | POST | `/api/absensi/approve-absensi/:absenId` | Approve absensi |
 | POST | `/api/absensi/reject-absensi/:absenId` | Reject absensi |
 | POST | `/api/absensi/validasi/:absenId` | Validasi absensi |
+| POST | `/api/absensi/koreksi/:absenId` | Koreksi jam/status/catatan (recompute potongan + audit) |
 
 > **Validasi radius:** Absen ditolak (HTTP 400) jika lokasi GPS di luar `radius` retail. Hanya aktif bila retail punya `latitude`, `longitude`, dan `radius`. Pengecualian: jika di luar radius retail asal tapi masih dalam radius OC/Store lain yang aktif, absen diizinkan dengan `is_approval=1`.
 
 > **Absen telat (Sales Toko/Trainee):** Absen lewat `end_time` → `status_approval=1` (waiting). Keluar diblok sampai masuk di-approve.
+
+> **Koreksi Absen (admin):** Admin ubah `absen_time`/`status_absen`/`reason` 1 baris. Sistem recompute `status_absen` (ontime/telat vs `end_time`) + `potongan` (telat >15mnt) dari waktu baru — kecuali admin override status eksplisit. Bila baris = `masuk_absensi_id` sesi & jam geser tanggal → `absensi_sesi.tanggal` ikut update. Audit `updated_by`/`updated_at` + `log_activity` (old→new). Transaksional. Tipe absen & retail tak diubah.
 
 > **Lembur (Sales Toko):** User bisa lembur (gantikan karyawan toko lain) pakai tipe shift beda, pilih OC → submit → `is_lembur=1` + approval. Trainee dikecualikan.
 > - **Non-jadwal:** tipe lembur = PAGI saja, wajib absen regular hari ini komplit dulu.

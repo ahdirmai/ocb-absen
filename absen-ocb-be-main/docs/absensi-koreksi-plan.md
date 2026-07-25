@@ -1,6 +1,6 @@
 # Plan: Koreksi Absen (Attendance Correction)
 
-Dokumen desain fitur koreksi absen. Status: **plan, belum diimplementasi.**
+Dokumen desain fitur koreksi absen. Status: **implemented.**
 
 ## Context
 

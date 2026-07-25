@@ -795,6 +795,135 @@ const rekapKalender = async (req, res) => {
   }
 };
 
+// Koreksi absen (admin). Ubah jam/status/catatan 1 baris; recompute status_absen
+// + potongan dari waktu baru; sinkron absensi_sesi; audit ke log_activity.
+// Semua dalam 1 transaksi. Tipe absen & retail TIDAK diubah (di luar scope).
+const koreksiAbsen = async (req, res) => {
+  const { absenId } = req.params;
+  const adminId = req.user?.id;
+  const { absen_time, status_absen: statusInput, reason } = req.body;
+
+  if (!absen_time) {
+    return res.status(400).json({
+      message: "Waktu absen (absen_time) wajib diisi.",
+      status: "failed",
+      status_code: "400",
+    });
+  }
+
+  try {
+    const oldRow = await absensiModel.getAbsensiById(absenId);
+    if (!oldRow) {
+      return res.status(404).json({
+        message: "Data absensi tidak ditemukan.",
+        status: "failed",
+        status_code: "404",
+      });
+    }
+
+    const getTimeDB = await absensiModel.getTimeDB(oldRow.absen_type_id);
+    const getPotonganLate = await absensiModel.getPotonganLate(1);
+    const potonganLate = Number(getPotonganLate?.value || 0);
+
+    const newMoment = moment.tz(absen_time, "YYYY-MM-DD HH:mm:ss", timezone);
+    if (!newMoment.isValid()) {
+      return res.status(400).json({
+        message: "Format waktu absen tidak valid (YYYY-MM-DD HH:mm:ss).",
+        status: "failed",
+        status_code: "400",
+      });
+    }
+    const timeAbsenFull = newMoment.format("YYYY-MM-DD HH:mm:ss");
+
+    // Recompute status_absen + potongan dari waktu baru vs window tipe.
+    // Bila admin kirim status_absen eksplisit → pakai; else derive dari end_time.
+    const endTimeDB = moment
+      .tz(getTimeDB.end_time, "HH:mm:ss", timezone)
+      .format("HH:mm:ss");
+    const newTimeHHmmss = newMoment.format("HH:mm:ss");
+
+    let status_absen;
+    if (statusInput === 1 || statusInput === 2 || statusInput === "1" || statusInput === "2") {
+      status_absen = Number(statusInput);
+    } else {
+      status_absen = newTimeHHmmss < endTimeDB ? 1 : 2;
+    }
+
+    let potongan = 0;
+    if (status_absen === 2) {
+      const diffMinutes = moment(newTimeHHmmss, "HH:mm:ss").diff(
+        moment(endTimeDB, "HH:mm:ss"),
+        "minutes"
+      );
+      if (diffMinutes > 15) {
+        potongan = potonganLate;
+      }
+    }
+
+    const updatedAt = moment().tz(timezone).format("YYYY-MM-DD HH:mm:ss");
+    const newReason = reason !== undefined ? reason : oldRow.reason;
+
+    const conn = await dbpool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      await absensiModel.koreksiAbsen(
+        conn,
+        absenId,
+        {
+          absen_time: timeAbsenFull,
+          status_absen,
+          potongan,
+          reason: newReason,
+          updated_at: updatedAt,
+        },
+        adminId,
+        oldRow
+      );
+
+      // Sinkron sesi: bila baris = masuk_absensi_id & tanggal bergeser → update.
+      const sesi = await sesiModel.findSesiByAbsensiId(conn, absenId);
+      if (sesi && String(sesi.masuk_absensi_id) === String(absenId)) {
+        const newTanggal = newMoment.format("YYYY-MM-DD");
+        const oldTanggal = moment(sesi.tanggal).format("YYYY-MM-DD");
+        if (newTanggal !== oldTanggal) {
+          await sesiModel.updateSesiTanggal(conn, sesi.sesi_id, newTanggal, updatedAt);
+        }
+      }
+
+      await conn.commit();
+    } catch (txError) {
+      await conn.rollback();
+      throw txError;
+    } finally {
+      conn.release();
+    }
+
+    return res.json({
+      message: "Koreksi absen berhasil.",
+      status: "success",
+      status_code: "200",
+      data: {
+        absensi_id: Number(absenId),
+        absen_time: timeAbsenFull,
+        status_absen,
+        potongan,
+        reason: newReason,
+        updated_by: adminId,
+        updated_at: updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error("Error koreksiAbsen:", error);
+    return res.status(500).json({
+      message: "Internal Server Error",
+      status: "failed",
+      status_code: "500",
+      serverMessage: error.message,
+    });
+  }
+};
+
 module.exports = {
   createAbsensi,
   approveAbsen,
@@ -805,5 +934,6 @@ module.exports = {
   totalAbsenPerMonth,
   cekFeePeruser,
   historyAbsensiAllUser,
+  koreksiAbsen,
   rekapKalender,
 };

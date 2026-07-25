@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Added
+- **Koreksi Absen (admin)** — admin bisa koreksi jam/status/catatan 1 baris `absensi` dari halaman Absensi. Lihat `docs/absensi-koreksi-plan.md`.
+  - DB: kolom audit `absensi.updated_by` + `updated_at` (`docs/absensi-koreksi.sql` / `scripts/migrate-absensi-koreksi.js` idempotent). `updated_at IS NOT NULL` = pernah dikoreksi.
+  - BE model (`absensi.model.js`): `getAbsensiById`, `koreksiAbsen(conn, ...)` transaksional + audit old→new ke `log_activity`. `historyAbsensiAllUser` SELECT +`status_absen` +`start_time` +`end_time` (prefill FE). `absensiSesi.model.js`: `findSesiByAbsensiId`, `updateSesiTanggal`.
+  - BE controller (`absensi.controller.js` `koreksiAbsen`): recompute `status_absen` (ontime/telat vs `end_time`) + `potongan` (telat >15mnt → potonganLate) dari waktu baru; admin boleh override status eksplisit. Sinkron `absensi_sesi.tanggal` bila jam masuk geser tanggal. Transaksi + rollback. Route `POST /api/absensi/koreksi/:absenId`.
+  - FE (`Absensi.jsx`): kolom aksi "Koreksi" + modal (waktu `datetime-local`, status Ontime/Telat/Otomatis, catatan). Save POST + optimistic update.
+
 - **Lembur staff jadwal-harian: cover shift lain (kategori komplemen)** — staff jadwal-harian (mis. di-assign SUBUH) bisa menggantikan karyawan toko lain di shift beda via lembur. Sebelumnya lembur hardcode PAGI saja.
   - BE (`absenManagement.model.js` `getLemburTypes`): jalur jadwal-harian → tipe lembur = kategori KOMPLEMEN shift assigned hari ini (assigned Malam/SUBUH → Pagi+Sore; Sore → Pagi+Malam; Pagi → Sore+Malam). Tetap exclude tipe jadwal hari itu + Trainee. Non-jadwal → tetap PAGI-only (legacy). Jadwal-harian tanpa jadwal hari ini → kosong.
   - BE (`absensi.controller.js` hard-guard lembur): jalur jadwal-harian → lembur boleh sebelum/sesudah shift regular, diblokir HANYA saat sedang menjalani shift regular (sesi regular OPEN, `includeYesterday` tangkap subuh cross-date). Non-jadwal → tetap wajib regular komplit dulu. Guard lembur-keluar-wajib-ada-lembur-masuk tak berubah (semua jalur).

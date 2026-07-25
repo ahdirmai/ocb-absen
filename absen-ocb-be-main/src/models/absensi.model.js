@@ -84,6 +84,41 @@ const validasiAbsen =(body, absenId)=>{
     return dbpool.execute(SQLQuery, [isValid, statusApproval, absenId]);
 }
 
+// Ambil 1 baris absensi mentah (untuk koreksi: nilai lama + cek sesi + tipe).
+const getAbsensiById = async (absenId) => {
+    const [rows] = await dbpool.query('SELECT * FROM absensi WHERE absensi_id = ?', [absenId]);
+    return rows[0];
+}
+
+// Koreksi absen (transaksional). Update jam/status/potongan/reason + audit.
+// conn = koneksi transaksi (atomic dgn sinkron sesi). Log old->new ke log_activity.
+const koreksiAbsen = async (conn, absenId, fields, adminId, oldRow) => {
+    const { absen_time, status_absen, potongan, reason, updated_at } = fields;
+    const query = `UPDATE absensi
+        SET absen_time = ?, status_absen = ?, potongan = ?, reason = ?, updated_by = ?, updated_at = ?
+        WHERE absensi_id = ?`;
+    const values = [absen_time, status_absen, potongan, reason, adminId, updated_at, absenId];
+    const [result] = await conn.query(query, values);
+
+    // Audit old->new ke log_activity (kolom timestamp default CURRENT_TIMESTAMP).
+    const ringkas = JSON.stringify({
+        absensi_id: absenId,
+        old: {
+            absen_time: oldRow?.absen_time,
+            status_absen: oldRow?.status_absen,
+            potongan: oldRow?.potongan,
+            reason: oldRow?.reason,
+        },
+        new: { absen_time, status_absen, potongan, reason },
+    });
+    await conn.query(
+        `INSERT INTO log_activity (table_name, action, dataquery, user_id) VALUES (?, ?, ?, ?)`,
+        ['absensi', 'UPDATE', ringkas, adminId]
+    );
+
+    return result;
+}
+
 
 
 // const getTimeDB = async (absen_id, retail_id, time) => {
@@ -226,12 +261,15 @@ const historyAbsensiAllUser = async (start_date, end_date) => {
         a.absen_time, 
         a.retail_id, 
         r.name AS retail_name, 
-        a.absen_type_id, 
-        ta.name AS category_absen, 
-        ta.description, 
-        ta.fee, 
+        a.absen_type_id,
+        ta.name AS category_absen,
+        ta.description,
+        ta.fee,
+        ta.start_time,
+        ta.end_time,
         uz.name AS Approval,
         a.is_valid,
+        a.status_absen,
         a.reason,
         a.photo_url,
         a.status_approval,
@@ -482,6 +520,8 @@ module.exports={
     approveAbsen,
     rejectAbsen,
     validasiAbsen,
+    getAbsensiById,
+    koreksiAbsen,
     getPotonganLate,
     cekAbesensiToday,
     cekAbsensiTodayByTimeCategory,

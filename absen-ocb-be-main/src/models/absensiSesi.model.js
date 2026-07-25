@@ -176,6 +176,27 @@ const markStaleOpenSesiIncomplete = async (conn, userId, isLembur = 0) => {
   return result.affectedRows || 0;
 };
 
+// Cari sesi yang memuat 1 baris absensi (sbg masuk atau keluar) — untuk koreksi.
+const findSesiByAbsensiId = async (conn, absenId) => {
+  const [rows] = await conn.query(
+    `SELECT * FROM absensi_sesi
+     WHERE masuk_absensi_id = ? OR keluar_absensi_id = ?
+     LIMIT 1`,
+    [absenId, absenId]
+  );
+  return rows.length > 0 ? rows[0] : null;
+};
+
+// Update tanggal sesi (dipakai saat koreksi jam masuk menggeser tanggal).
+// Hanya baris masuk yang meng-anchor sesi.tanggal.
+const updateSesiTanggal = async (conn, sesiId, tanggal, updatedAt = null) => {
+  const [result] = await conn.query(
+    `UPDATE absensi_sesi SET tanggal = ?, updated_at = ? WHERE sesi_id = ?`,
+    [tanggal, updatedAt, sesiId]
+  );
+  return result;
+};
+
 // Tutup sesi (absen keluar). Set keluar + status='closed'.
 const closeSesi = async (conn, sesiId, keluarAbsensiId, updatedAt = null) => {
   const [result] = await conn.query(
@@ -256,6 +277,8 @@ module.exports = {
   findAnyOpenSesi,
   getJadwalKeluarId,
   markStaleOpenSesiIncomplete,
+  findSesiByAbsensiId,
+  updateSesiTanggal,
   closeSesi,
   createIncompleteSesi,
   getTodaySesiSummary,
