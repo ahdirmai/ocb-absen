@@ -60,10 +60,11 @@ node src/index.js
 | Method | URL | Keterangan |
 |---|---|---|
 | GET | `/api/jadwal-harian?month=YYYY-MM&retail_id=` | List jadwal per bulan |
+| GET | `/api/jadwal-harian/active-retails` | OC dgn shift jadwal-harian aktif hari ini (filter dropdown) |
 | GET | `/api/jadwal-harian/eligible-users` | User Sales Toko & Trainee |
 | GET | `/api/jadwal-harian/kategori` | Opsi shift (S1/S2/S3/S4/S5/TRAINEE) |
 | GET | `/api/jadwal-harian/by-date?retail_id=&tanggal=` | Jadwal satu retail satu tanggal |
-| GET | `/api/jadwal-harian/employees/:retailId` | Karyawan terhubung ke retail |
+| GET | `/api/jadwal-harian/employees/:retailId` | Karyawan retail dgn shift jadwal-harian aktif |
 | POST | `/api/jadwal-harian/assign` | Upsert bulk (user_ids + retail + absen_masuk_id + absen_keluar_id + tanggal) |
 | POST | `/api/jadwal-harian/set-date` | Replace atomik jadwal retail+tanggal |
 | POST | `/api/jadwal-harian/delete/:id` | Soft delete |

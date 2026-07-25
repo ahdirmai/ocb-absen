@@ -6,6 +6,8 @@ const router = express.Router();
 
 // Daftar user eligible (Sales Toko & Trainee Sales Toko)
 router.get("/eligible-users", authenticateToken, jadwalHarianController.getEligibleUsers);
+// Retail dgn shift jadwal-harian aktif hari ini (filter dropdown OC)
+router.get("/active-retails", authenticateToken, jadwalHarianController.getActiveJadwalRetails);
 // List jadwal per bulan (?month=YYYY-MM&retail_id=optional)
 router.get("/", authenticateToken, jadwalHarianController.getJadwal);
 // Karyawan terhubung ke retail (via shifting + shift_employes)

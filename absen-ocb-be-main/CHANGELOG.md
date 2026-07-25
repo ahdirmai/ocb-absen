@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Changed
+- **Halaman `/jadwal-harian` hanya tampilkan OC + karyawan yang jadwal-harian AKTIF** — sebelumnya dropdown OC tampilkan semua OC 1-40 dan matrix tampilkan semua karyawan retail, walau shift jadwal-harian tak aktif.
+  - BE endpoint baru `GET /api/jadwal-harian/active-retails` (`getActiveJadwalRetails`): retail dgn shifting `uses_jadwal_harian=1` + periode mencakup CURDATE(). CSV `retail_id` di-expand via `FIND_IN_SET` join retail.
+  - BE `getEmployeesByRetail` +filter `uses_jadwal_harian=1` + periode aktif (selaras `userUsesJadwalHarian`) — karyawan tanpa shift jadwal-harian aktif tak masuk matrix.
+  - FE (`JadwalHarian.jsx`): dropdown OC sumber ganti dari `/retail` → `/jadwal-harian/active-retails`. Fix `setJadwalRows`→`setMonthJadwal` (refresh setelah import Excel).
+
 ### Added
 - **Flag `is_cross_date` di tipe absen + auto-close sesi basi** — bedakan "cross-date sah" (shift keluar besok) vs "lupa keluar" (sesi basi) yang dua-duanya menghasilkan sesi `open`. Lihat `docs/cross-date-flag-plan.md`.
   - DB: kolom `tipe_absen.is_cross_date` (`docs/cross-date-flag.sql`), backfill SUBUH/SORE 9 JAM = 1, sisanya 0. Admin set via toggle CatAbsen.
