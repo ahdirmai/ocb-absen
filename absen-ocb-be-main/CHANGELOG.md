@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Added
+- **UI/UX baru halaman Absensi (toggle Lama/Baru)** (`Absensi.jsx`) — tampilan modern clean, akses via toggle segmented di header (persist `localStorage`, default Baru). UI lama tetap utuh (`uiMode='lama'`). FE only, tak sentuh BE/route/DB.
+  - Stat cards (Total/Ontime/Telat/Lembur), toolbar rapi (search global multi-field + date range + Export + quick-filter chip Valid/Invalid/Telat/Lembur), DataTable modern (sortable, badge status pill berwarna, badge Lembur, foto thumbnail, aksi ikon+tooltip, sticky header, empty/loading state).
+  - Reuse penuh handler existing (validasi/ignore/koreksi/export/preview) + modal — nol duplikasi logika.
+
 - **Koreksi Absen (admin)** — admin bisa koreksi jam/status/catatan 1 baris `absensi` dari halaman Absensi. Lihat `docs/absensi-koreksi-plan.md`.
   - DB: kolom audit `absensi.updated_by` + `updated_at` (`docs/absensi-koreksi.sql` / `scripts/migrate-absensi-koreksi.js` idempotent). `updated_at IS NOT NULL` = pernah dikoreksi.
   - BE model (`absensi.model.js`): `getAbsensiById`, `koreksiAbsen(conn, ...)` transaksional + audit old→new ke `log_activity`. `historyAbsensiAllUser` SELECT +`status_absen` +`start_time` +`end_time` (prefill FE). `absensiSesi.model.js`: `findSesiByAbsensiId`, `updateSesiTanggal`.

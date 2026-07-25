@@ -1,4 +1,5 @@
-import { useState,useRef, useEffect } from "react";
+/* eslint-disable react/prop-types */
+import { useState,useRef, useEffect, useMemo } from "react";
 import axios from "axios";
 import DataTable from "react-data-table-component";
 const VITE_API_URL = import.meta.env.VITE_API_URL;
@@ -10,16 +11,242 @@ import { Tooltip } from "react-tooltip";
 // const now = new Date();
 // const DateNow = format(now, "yyyy-MM-dd HH:mm:ss");
 
+// ── UI BARU (modern clean) ──────────────────────────────────────────────
+const StatCard = ({ label, value, color, icon }) => (
+  <div
+    style={{
+      flex: "1 1 140px",
+      background: "#fff",
+      borderRadius: "14px",
+      padding: "16px 18px",
+      boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+      display: "flex",
+      alignItems: "center",
+      gap: "12px",
+    }}
+  >
+    <div
+      style={{
+        width: "42px",
+        height: "42px",
+        borderRadius: "12px",
+        background: `${color}1a`,
+        color,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: "22px",
+        flexShrink: 0,
+      }}
+    >
+      <i className={`mdi ${icon}`}></i>
+    </div>
+    <div>
+      <div style={{ fontSize: "22px", fontWeight: 700, color: "#263238", lineHeight: 1.1 }}>
+        {value}
+      </div>
+      <div style={{ fontSize: "12px", color: "#90a4ae" }}>{label}</div>
+    </div>
+  </div>
+);
+
+const AbsensiBaru = ({
+  loading,
+  error,
+  stats,
+  rows,
+  columns,
+  globalSearch,
+  setGlobalSearch,
+  quickFilter,
+  setQuickFilter,
+  startDate,
+  setStartDate,
+  endDate,
+  setEndDate,
+  onFilter,
+  onExport,
+}) => {
+  const chips = [
+    { key: "semua", label: "Semua" },
+    { key: "valid", label: "Valid" },
+    { key: "invalid", label: "Invalid" },
+    { key: "telat", label: "Telat" },
+    { key: "lembur", label: "Lembur" },
+  ];
+
+  return (
+    <div style={{ padding: "4px 2px" }}>
+      {/* Stat ringkasan */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", marginBottom: "16px" }}>
+        <StatCard label="Total Absen" value={stats.total} color="#455a64" icon="mdi-clipboard-text" />
+        <StatCard label="Ontime" value={stats.ontime} color="#2e7d32" icon="mdi-check-circle" />
+        <StatCard label="Telat" value={stats.telat} color="#ef6c00" icon="mdi-clock-alert" />
+        <StatCard label="Lembur" value={stats.lembur} color="#8e24aa" icon="mdi-briefcase-clock" />
+      </div>
+
+      {/* Toolbar */}
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: "14px",
+          padding: "16px",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+          marginBottom: "16px",
+        }}
+      >
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "flex-end" }}>
+          <div style={{ flex: "2 1 220px" }}>
+            <label style={{ fontSize: "12px", color: "#607d8b", fontWeight: 600 }}>Cari</label>
+            <div style={{ position: "relative" }}>
+              <i
+                className="mdi mdi-magnify"
+                style={{ position: "absolute", left: "10px", top: "9px", color: "#b0bec5", fontSize: "18px" }}
+              ></i>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Nama, retail, code, deskripsi, catatan..."
+                value={globalSearch}
+                onChange={(e) => setGlobalSearch(e.target.value)}
+                style={{ paddingLeft: "34px", borderRadius: "10px" }}
+              />
+            </div>
+          </div>
+          <div style={{ flex: "1 1 140px" }}>
+            <label style={{ fontSize: "12px", color: "#607d8b", fontWeight: 600 }}>Dari</label>
+            <input
+              type="date"
+              className="form-control"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              style={{ borderRadius: "10px" }}
+            />
+          </div>
+          <div style={{ flex: "1 1 140px" }}>
+            <label style={{ fontSize: "12px", color: "#607d8b", fontWeight: 600 }}>Sampai</label>
+            <input
+              type="date"
+              className="form-control"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              style={{ borderRadius: "10px" }}
+            />
+          </div>
+          <button
+            className="btn"
+            onClick={onFilter}
+            style={{ background: "#2471a3", color: "#fff", borderRadius: "10px", fontWeight: 600 }}
+          >
+            <i className="mdi mdi-filter-variant"></i> Filter
+          </button>
+          <button
+            className="btn"
+            onClick={onExport}
+            style={{ background: "#27ae60", color: "#fff", borderRadius: "10px", fontWeight: 600 }}
+          >
+            <i className="mdi mdi-file-excel"></i> Export
+          </button>
+        </div>
+
+        {/* Quick filter chips */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "14px" }}>
+          {chips.map((c) => (
+            <button
+              key={c.key}
+              onClick={() => setQuickFilter(c.key)}
+              style={{
+                border: "1px solid",
+                borderColor: quickFilter === c.key ? "#e74c3c" : "#cfd8dc",
+                background: quickFilter === c.key ? "#e74c3c" : "#fff",
+                color: quickFilter === c.key ? "#fff" : "#607d8b",
+                borderRadius: "999px",
+                padding: "5px 14px",
+                fontSize: "12px",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tabel */}
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: "14px",
+          padding: "6px",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+        }}
+      >
+        {loading ? (
+          <div style={{ textAlign: "center", padding: "40px", color: "#90a4ae" }}>
+            <i className="mdi mdi-loading mdi-spin" style={{ fontSize: "28px" }}></i>
+            <p style={{ marginTop: "8px" }}>Memuat data...</p>
+          </div>
+        ) : error ? (
+          <div style={{ textAlign: "center", padding: "40px", color: "#c62828" }}>
+            <i className="mdi mdi-alert-circle" style={{ fontSize: "28px" }}></i>
+            <p style={{ marginTop: "8px" }}>Error: {error}</p>
+          </div>
+        ) : rows.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "48px", color: "#b0bec5" }}>
+            <i className="mdi mdi-inbox-remove" style={{ fontSize: "36px" }}></i>
+            <p style={{ marginTop: "8px" }}>Tidak ada data absensi.</p>
+          </div>
+        ) : (
+          <DataTable
+            keyField="absensi_id"
+            columns={columns}
+            data={rows}
+            pagination
+            responsive
+            highlightOnHover
+            fixedHeader
+            fixedHeaderScrollHeight="62vh"
+            customStyles={{
+              headCells: {
+                style: {
+                  background: "#f5f7fa",
+                  color: "#546e7a",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.3px",
+                },
+              },
+              rows: { style: { minHeight: "56px", fontSize: "13px" } },
+              cells: { style: { paddingTop: "6px", paddingBottom: "6px" } },
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+};
+
 const Absensi = () => {
   const [Absensies, setAbsensies] = useState([]);
   const [error, setError] = useState(null);
-  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [selectedImageAbsensi, setSelectedImageAbsensi] = useState(null);
   const [isModalOpenAbsensi, setIsModalOpenAbsensi] = useState(false);
   const [selectedKoreksi, setSelectedKoreksi] = useState(null);
   const [koreksiModalVisible, setKoreksiModalVisible] = useState(false);
   const [savingKoreksi, setSavingKoreksi] = useState(false);
+  // UI baru (toggle dalam halaman). Default "baru", persist ke localStorage.
+  const [uiMode, setUiMode] = useState(
+    () => localStorage.getItem("absensi_ui_mode") || "baru"
+  );
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [quickFilter, setQuickFilter] = useState("semua"); // semua|valid|invalid|telat|lembur
+
+  useEffect(() => {
+    localStorage.setItem("absensi_ui_mode", uiMode);
+  }, [uiMode]);
   const [startDate, setStartDate] = useState(""); // Tanggal mulai
   const [endDate, setEndDate] = useState(""); // Tanggal akhir
   const [filterText, setFilterText] = useState({
@@ -79,11 +306,60 @@ const Absensi = () => {
     Object.keys(filterText).every((key) => {
       const itemValue = String(item[key])?.toLowerCase(); // Pastikan item selalu jadi string kecil
       const filterValue = filterText[key].toLowerCase(); // Pastikan filter input menjadi huruf kecil
-  
+
       // Pastikan bahwa itemValue mengandung filterValue
       return itemValue.includes(filterValue);
     })
   );
+
+  // Deteksi baris "diabaikan" (rejected) — dipakai badge + quick filter.
+  const isRejected = (row) =>
+    String(row.status_approval).toLowerCase().includes("tolak") ||
+    String(row.status_approval).toLowerCase().includes("reject") ||
+    String(row.status_approval) === "3";
+  const isLembur = (row) => row.is_lembur === 1 || row.is_lembur === "1";
+
+  // Baris untuk UI BARU: search global (multi-field) + quick filter chip.
+  // Terpisah dari filteredAbsensi (UI lama pakai filterText per-kolom).
+  const displayedRows = useMemo(() => {
+    const q = globalSearch.trim().toLowerCase();
+    return Absensies.filter((row) => {
+      if (q) {
+        const hay = [
+          row.nama_karyawan,
+          row.retail_name,
+          row.category_absen,
+          row.description,
+          row.reason,
+        ]
+          .map((v) => String(v || "").toLowerCase())
+          .join(" ");
+        if (!hay.includes(q)) return false;
+      }
+      switch (quickFilter) {
+        case "valid":
+          return row.is_valid === 1 && !isRejected(row);
+        case "invalid":
+          return row.is_valid !== 1 && !isRejected(row);
+        case "telat":
+          return Number(row.status_absen) === 2;
+        case "lembur":
+          return isLembur(row);
+        default:
+          return true;
+      }
+    });
+  }, [Absensies, globalSearch, quickFilter]);
+
+  // Ringkasan stat dari baris tampil.
+  const stats = useMemo(() => {
+    return {
+      total: displayedRows.length,
+      ontime: displayedRows.filter((r) => Number(r.status_absen) === 1).length,
+      telat: displayedRows.filter((r) => Number(r.status_absen) === 2).length,
+      lembur: displayedRows.filter((r) => isLembur(r)).length,
+    };
+  }, [displayedRows]);
 
   const handleInputChange = (field, value) => {
     setFilterText((prev) => ({
@@ -250,6 +526,173 @@ const Absensi = () => {
       setSavingKoreksi(false);
     }
   };
+
+  // Badge status berwarna (pill) untuk UI baru.
+  const pill = (bg, text, label) => (
+    <span
+      style={{
+        display: "inline-block",
+        padding: "3px 10px",
+        borderRadius: "999px",
+        background: bg,
+        color: text,
+        fontSize: "11px",
+        fontWeight: 700,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </span>
+  );
+  const renderStatusBadge = (row) => {
+    if (isRejected(row)) return pill("#eceff1", "#607d8b", "Diabaikan");
+    if (row.is_valid === 1) return pill("#e8f5e9", "#2e7d32", "Valid");
+    return pill("#ffebee", "#c62828", "Invalid");
+  };
+
+  // Kolom UI BARU: sortable, badge, thumbnail, aksi ikon ringkas.
+  const iconBtn = (bg, title, onClick, icon) => (
+    <button
+      onClick={onClick}
+      title={title}
+      style={{
+        border: "none",
+        background: bg,
+        color: "#fff",
+        width: "30px",
+        height: "30px",
+        borderRadius: "7px",
+        cursor: "pointer",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        marginRight: "4px",
+        fontSize: "15px",
+      }}
+    >
+      <i className={`mdi ${icon}`}></i>
+    </button>
+  );
+
+  const columnsV2 = [
+    {
+      name: "Karyawan",
+      sortable: true,
+      selector: (row) => row.nama_karyawan || "",
+      cell: (row) => (
+        <div style={{ padding: "4px 0" }}>
+          <div style={{ fontWeight: 600, color: "#2c3e50" }}>{row.nama_karyawan}</div>
+          <div style={{ fontSize: "11px", color: "#90a4ae" }}>{row.retail_name}</div>
+        </div>
+      ),
+      grow: 2,
+    },
+    {
+      name: "Code",
+      sortable: true,
+      selector: (row) => row.category_absen || "",
+      cell: (row) => (
+        <span style={{ fontSize: "12px", color: "#546e7a" }}>{row.category_absen}</span>
+      ),
+    },
+    {
+      name: "Waktu",
+      sortable: true,
+      selector: (row) => (row.absen_time ? new Date(row.absen_time).getTime() : 0),
+      cell: (row) => (
+        <span style={{ fontSize: "12px", color: "#455a64" }}>
+          {row.absen_time
+            ? format(new Date(row.absen_time), "dd MMM yyyy, HH:mm")
+            : "-"}
+        </span>
+      ),
+      grow: 1.4,
+    },
+    {
+      name: "Deskripsi",
+      sortable: true,
+      selector: (row) => row.description || "",
+      cell: (row) => (
+        <span style={{ fontSize: "12px" }}>
+          {row.description || "-"}
+          {isLembur(row) && (
+            <span
+              style={{
+                marginLeft: "6px",
+                padding: "2px 7px",
+                borderRadius: "999px",
+                background: "#fff3e0",
+                color: "#e65100",
+                fontSize: "10px",
+                fontWeight: 700,
+              }}
+            >
+              Lembur
+            </span>
+          )}
+        </span>
+      ),
+      grow: 2,
+    },
+    {
+      name: "Fee",
+      sortable: true,
+      selector: (row) => Number(row.fee) || 0,
+      cell: (row) => (
+        <span style={{ fontSize: "12px", color: "#455a64" }}>{row.fee}</span>
+      ),
+      width: "80px",
+    },
+    {
+      name: "Foto",
+      cell: (row) => {
+        const isVid =
+          row?.photo_url &&
+          (row.photo_url.endsWith(".mp4") || row.photo_url.endsWith(".webm"));
+        const src = row?.photo_url ? `${VITE_API_IMAGE}${row.photo_url}` : "/absen.jpg";
+        return isVid ? (
+          <video
+            src={src}
+            style={{ width: "40px", height: "40px", borderRadius: "50%", objectFit: "cover", cursor: "pointer" }}
+            onClick={() => handleImageAbsensiClick(src)}
+          />
+        ) : (
+          <img
+            src={src}
+            alt="foto"
+            style={{ width: "40px", height: "40px", borderRadius: "50%", objectFit: "cover", cursor: "pointer" }}
+            onClick={() => handleImageAbsensiClick(src)}
+          />
+        );
+      },
+      width: "70px",
+    },
+    {
+      name: "Status",
+      sortable: true,
+      selector: (row) => (isRejected(row) ? 2 : row.is_valid === 1 ? 0 : 1),
+      cell: (row) => renderStatusBadge(row),
+      width: "110px",
+    },
+    {
+      name: "Aksi",
+      cell: (row) => (
+        <div style={{ display: "flex", alignItems: "center" }}>
+          {iconBtn(
+            row.is_valid ? "#43a047" : "#e53935",
+            row.is_valid ? "Set Invalid" : "Validasi",
+            () => handleValidasi(row),
+            row.is_valid ? "mdi-check-circle" : "mdi-close-circle"
+          )}
+          {!isRejected(row) &&
+            iconBtn("#fb8c00", "Ignore (karyawan bisa absen ulang)", () => handleIgnore(row), "mdi-cancel")}
+          {iconBtn("#1e88e5", "Koreksi jam/status/catatan", () => handleKoreksi(row), "mdi-pencil")}
+        </div>
+      ),
+      grow: 1.4,
+      width: "140px",
+    },
+  ];
 
   const columns = [
     {
@@ -554,11 +997,69 @@ const Absensi = () => {
   
  
 
+  // Segmented toggle UI Lama/Baru.
+  const uiToggle = (
+    <div
+      style={{
+        display: "inline-flex",
+        background: "#eceff1",
+        borderRadius: "999px",
+        padding: "3px",
+      }}
+    >
+      {[
+        { key: "baru", label: "UI Baru" },
+        { key: "lama", label: "UI Lama" },
+      ].map((opt) => (
+        <button
+          key={opt.key}
+          onClick={() => setUiMode(opt.key)}
+          style={{
+            border: "none",
+            borderRadius: "999px",
+            padding: "6px 16px",
+            fontSize: "13px",
+            fontWeight: 600,
+            cursor: "pointer",
+            background: uiMode === opt.key ? "#e74c3c" : "transparent",
+            color: uiMode === opt.key ? "#fff" : "#607d8b",
+          }}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div className="content-wrapper">
-      <div className="page-header">
-        <h3 className="page-title">Data Absensi</h3>
+      <div
+        className="page-header"
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+      >
+        <h3 className="page-title" style={{ margin: 0 }}>Data Absensi</h3>
+        {uiToggle}
       </div>
+
+      {uiMode === "baru" ? (
+        <AbsensiBaru
+          loading={loading}
+          error={error}
+          stats={stats}
+          rows={displayedRows}
+          columns={columnsV2}
+          globalSearch={globalSearch}
+          setGlobalSearch={setGlobalSearch}
+          quickFilter={quickFilter}
+          setQuickFilter={setQuickFilter}
+          startDate={startDate}
+          setStartDate={setStartDate}
+          endDate={endDate}
+          setEndDate={setEndDate}
+          onFilter={handleFilter}
+          onExport={exportToExcel}
+        />
+      ) : (
       <div className="row">
         <div className="col-lg-12 grid-margin stretch-card">
           <div className="card">
@@ -682,6 +1183,7 @@ const Absensi = () => {
           </div>
         </div>
       </div>
+      )}
       {isModalOpenAbsensi && (
         <div
           style={{
