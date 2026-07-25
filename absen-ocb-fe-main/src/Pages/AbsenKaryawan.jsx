@@ -499,9 +499,11 @@ const AbsenKaryawan = () => {
     return { todayLembur, hasSesiData, hasOpen, hasClosed, masukRow };
   }, [history]);
 
-  // Cek apakah lembur sudah selesai (masuk+keluar keduanya ada).
+  // Cek apakah lembur sudah selesai (masuk+keluar keduanya ada). Berlaku juga
+  // saat mode "mixed" (regular + lembur) — lembur bisa dilakukan setelah regular
+  // komplit, jadi tak boleh dibatasi attendanceMode==='lembur' saja.
   const lemburComplete = useMemo(() => {
-    if (attendanceMode !== "lembur") return false;
+    if (attendanceMode !== "lembur" && attendanceMode !== "mixed") return false;
     // Prefer sesi: sesi lembur 'closed' = selesai.
     if (todayLemburSesi.hasSesiData) {
       return todayLemburSesi.hasClosed;
@@ -516,16 +518,24 @@ const AbsenKaryawan = () => {
     return masukDone && keluarDone;
   }, [attendanceMode, todayLemburSesi]);
 
-  // Mode terkunci: lembur aktif TAPI belum selesai. Setelah selesai → unlock ke regular.
-  const effectiveLemburMode = (attendanceMode === "lembur" && !lemburComplete) || (attendanceMode === null && isLemburMode);
+  // Mode lembur aktif bila:
+  // - Sesi lembur berjalan (attendanceMode 'lembur' belum selesai), ATAU
+  // - User klik "Mulai Lembur" (isLemburMode) & TIDAK sedang mid-shift regular.
+  //   Cover kasus regular sudah komplit (attendanceMode 'regular') maupun belum
+  //   absen (null) — asalkan bukan mid-shift (regularInProgress).
+  const effectiveLemburMode =
+    (attendanceMode === "lembur" && !lemburComplete) ||
+    (isLemburMode && !regularInProgress);
 
-  // Reset isLemburMode saat mode berubah (lembur selesai → kembali ke regular).
+  // Reset isLemburMode hanya bila mode LEMBUR yang sedang berjalan sudah selesai,
+  // atau saat mid-shift regular (tak boleh lembur). Jangan reset hanya karena
+  // attendanceMode 'regular' komplit — itu justru saat user mulai lembur manual.
   useEffect(() => {
-    if (attendanceMode !== "lembur" || lemburComplete) {
+    if (lemburComplete || regularInProgress) {
       setIsLemburMode(false);
       setSelectedLemburRetail(null);
     }
-  }, [attendanceMode, lemburComplete]);
+  }, [lemburComplete, regularInProgress]);
 
   // Lembur: arah attempt berikutnya. Prefer sesi (open → butuh keluar), else scan description.
   const lemburDirection = useMemo(() => {
