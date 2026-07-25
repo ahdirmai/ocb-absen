@@ -97,6 +97,106 @@ const findOpenSesi = async (conn, params) => {
   return rows.length > 0 ? rows[0] : null;
 };
 
+// Cari sesi open user TANPA filter kategori/jadwal — untuk validasi tipe keluar
+// (tahu kategori/jadwal sesi yang sedang berjalan). Beda dgn findOpenSesi yang
+// dipakai untuk pairing. includeYesterday utk shift cross-midnight.
+const findAnyOpenSesi = async (params, conn = dbpool) => {
+  const {
+    user_id,
+    is_lembur = 0,
+    includeYesterday = false,
+  } = params;
+
+  const dateFilter = includeYesterday
+    ? "s.tanggal >= (CURDATE() - INTERVAL 1 DAY)"
+    : "s.tanggal = CURDATE()";
+
+  const [rows] = await conn.query(
+    `SELECT s.sesi_id, s.tanggal, s.kategori_absen, s.jadwal_id, s.is_lembur
+     FROM absensi_sesi s
+     WHERE s.user_id = ?
+       AND s.status = 'open'
+       AND s.is_lembur = ?
+       AND ${dateFilter}
+     ORDER BY s.created_at DESC, s.sesi_id DESC
+     LIMIT 1`,
+    [user_id, is_lembur ? 1 : 0]
+  );
+  return rows.length > 0 ? rows[0] : null;
+};
+
+// Ambil absen_keluar_id dari jadwal_harian tertentu — untuk validasi tipe keluar
+// pada jalur jadwal harian (tipe keluar harus == absen_keluar_id jadwalnya).
+const getJadwalKeluarId = async (jadwalId, conn = dbpool) => {
+  const [rows] = await conn.query(
+    `SELECT absen_keluar_id FROM jadwal_harian WHERE id = ? AND is_deleted = 0 LIMIT 1`,
+    [jadwalId]
+  );
+  return rows.length > 0 ? rows[0].absen_keluar_id : null;
+};
+
+// Batas grace keluar cross-date (jam) — sinkron dgn FE
+// CROSS_DATE_KELUAR_GRACE_HOURS di AbsenKaryawan.jsx.
+const CROSS_DATE_KELUAR_GRACE_HOURS = 3;
+
+// Tandai sesi open BASI (lupa keluar) jadi 'incomplete'. Dua kasus basi:
+//   1. Same-day (is_cross_date=0) tanggal < CURDATE() → lupa keluar.
+//   2. Cross-date (is_cross_date=1) yang sudah LEWAT batas: jam keluar terjadwal
+//      = start_time tipe KELUAR pasangannya (tk, match by name), pada tanggal
+//      masuk +1 hari; deadline = + grace 3 jam. Lewat itu = lupa keluar juga.
+//      Pakai start_time keluar, BUKAN ta.end_time masuk (window masuk sempit).
+// Cross-date yang masih dalam window (belum lewat deadline) TIDAK ditutup —
+// user memang belum waktunya keluar. Dipanggil transaksional saat user absen
+// masuk lagi, cegah blokir + jaga akurasi lembur-guard.
+const markStaleOpenSesiIncomplete = async (conn, userId, isLembur = 0) => {
+  const [result] = await conn.query(
+    `UPDATE absensi_sesi s
+       JOIN absensi a ON a.absensi_id = s.masuk_absensi_id
+       JOIN tipe_absen ta ON ta.absen_id = a.absen_type_id
+       LEFT JOIN tipe_absen tk
+         ON tk.name = ta.name AND tk.is_deleted = 0
+        AND (LOWER(tk.description) LIKE '%keluar%' OR LOWER(tk.description) LIKE '%pulang%')
+     SET s.status = 'incomplete', s.updated_at = NOW()
+     WHERE s.user_id = ?
+       AND s.is_lembur = ?
+       AND s.status = 'open'
+       AND (
+         (COALESCE(ta.is_cross_date, 0) = 0 AND s.tanggal < CURDATE())
+         OR (
+           COALESCE(ta.is_cross_date, 0) = 1
+           AND tk.start_time IS NOT NULL
+           AND (
+             TIMESTAMP(s.tanggal + INTERVAL 1 DAY, tk.start_time)
+             + INTERVAL ? HOUR
+           ) < NOW()
+         )
+       )`,
+    [userId, isLembur ? 1 : 0, CROSS_DATE_KELUAR_GRACE_HOURS]
+  );
+  return result.affectedRows || 0;
+};
+
+// Cari sesi yang memuat 1 baris absensi (sbg masuk atau keluar) — untuk koreksi.
+const findSesiByAbsensiId = async (conn, absenId) => {
+  const [rows] = await conn.query(
+    `SELECT * FROM absensi_sesi
+     WHERE masuk_absensi_id = ? OR keluar_absensi_id = ?
+     LIMIT 1`,
+    [absenId, absenId]
+  );
+  return rows.length > 0 ? rows[0] : null;
+};
+
+// Update tanggal sesi (dipakai saat koreksi jam masuk menggeser tanggal).
+// Hanya baris masuk yang meng-anchor sesi.tanggal.
+const updateSesiTanggal = async (conn, sesiId, tanggal, updatedAt = null) => {
+  const [result] = await conn.query(
+    `UPDATE absensi_sesi SET tanggal = ?, updated_at = ? WHERE sesi_id = ?`,
+    [tanggal, updatedAt, sesiId]
+  );
+  return result;
+};
+
 // Tutup sesi (absen keluar). Set keluar + status='closed'.
 const closeSesi = async (conn, sesiId, keluarAbsensiId, updatedAt = null) => {
   const [result] = await conn.query(
@@ -174,6 +274,11 @@ module.exports = {
   resolveJadwalId,
   openSesi,
   findOpenSesi,
+  findAnyOpenSesi,
+  getJadwalKeluarId,
+  markStaleOpenSesiIncomplete,
+  findSesiByAbsensiId,
+  updateSesiTanggal,
   closeSesi,
   createIncompleteSesi,
   getTodaySesiSummary,

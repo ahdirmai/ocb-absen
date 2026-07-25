@@ -100,34 +100,60 @@ const createAbsensi = async (req, res) => {
     const selectedDesc = String(getTimeDB.description || "").toLowerCase();
     const isKeluar =
       selectedDesc.includes("keluar") || selectedDesc.includes("pulang");
+    const isMasuk = selectedDesc.includes("masuk");
 
-    // Hard-guard lembur: lembur hanya boleh setelah shift regular hari ini komplit
-    // (masuk + keluar). Lembur-keluar wajib didahului lembur-masuk.
-    // Baca sesi (dual-path): prefer absensi_sesi, fallback count LIKE utk data pra-sesi.
+    // Hard-guard lembur. Dua jalur precondition:
+    // - Jadwal-harian: user gantikan karyawan toko lain di shift beda (komplemen).
+    //   Boleh lembur sebelum/sesudah shift regular hari itu — TAPI tidak saat
+    //   sedang menjalani shift regular (sesi regular OPEN = mid-shift, tak bisa
+    //   di dua tempat). includeYesterday menangkap subuh cross-date semalam.
+    // - Non-jadwal: perilaku lama — regular hari ini wajib komplit (masuk+keluar).
+    // Lembur-keluar wajib didahului lembur-masuk (semua jalur, di bawah).
     if (body.is_lembur === 1) {
-      const regularSesi = await sesiModel.getTodaySesiSummary(
-        body.user_id,
-        false
-      );
-      // Regular komplit = ada sesi regular closed, ATAU (fallback pra-sesi) count masuk+keluar.
-      let regularComplete = regularSesi.hasClosed;
-      if (!regularComplete && regularSesi.closedCount === 0 && regularSesi.openCount === 0) {
-        const regularToday = await absensiModel.getTodayDirectionSummaryByLembur(
+      const isJadwalHarianUser =
+        await absenManagementModel.userUsesJadwalHarian(body.user_id);
+
+      if (isJadwalHarianUser) {
+        const regularSesi = await sesiModel.getTodaySesiSummary(
+          body.user_id,
+          false,
+          true
+        );
+        if (regularSesi.hasOpen) {
+          removeUploadedImage(file.filename);
+
+          return res.status(400).json({
+            message:
+              "Selesaikan shift regular Anda dulu (absen keluar) sebelum lembur.",
+            status: "failed",
+            status_code: "400",
+          });
+        }
+      } else {
+        const regularSesi = await sesiModel.getTodaySesiSummary(
           body.user_id,
           false
         );
-        regularComplete = regularToday.masuk >= 1 && regularToday.keluar >= 1;
-      }
+        // Regular komplit = ada sesi regular closed, ATAU (fallback pra-sesi) count masuk+keluar.
+        let regularComplete = regularSesi.hasClosed;
+        if (!regularComplete && regularSesi.closedCount === 0 && regularSesi.openCount === 0) {
+          const regularToday = await absensiModel.getTodayDirectionSummaryByLembur(
+            body.user_id,
+            false
+          );
+          regularComplete = regularToday.masuk >= 1 && regularToday.keluar >= 1;
+        }
 
-      if (!regularComplete) {
-        removeUploadedImage(file.filename);
+        if (!regularComplete) {
+          removeUploadedImage(file.filename);
 
-        return res.status(400).json({
-          message:
-            "Lembur hanya bisa dilakukan setelah absen masuk dan keluar regular hari ini selesai.",
-          status: "failed",
-          status_code: "400",
-        });
+          return res.status(400).json({
+            message:
+              "Lembur hanya bisa dilakukan setelah absen masuk dan keluar regular hari ini selesai.",
+            status: "failed",
+            status_code: "400",
+          });
+        }
       }
 
       if (isKeluar) {
@@ -202,6 +228,45 @@ const createAbsensi = async (req, res) => {
           });
         }
       }
+
+      // Guard tipe keluar harus cocok dgn sesi masuk yang sedang open.
+      // Cegah user pilih tipe keluar beda kategori/jadwal → sesi pecah
+      // (masuk menggantung open + keluar jadi incomplete terpisah).
+      const openSesiAktif = await sesiModel.findAnyOpenSesi({
+        user_id: body.user_id,
+        is_lembur: body.is_lembur,
+        includeYesterday: isEarlyMorningKeluar,
+      });
+
+      if (openSesiAktif) {
+        let cocok = true;
+        if (openSesiAktif.jadwal_id != null) {
+          // Jalur jadwal harian: tipe keluar harus == absen_keluar_id jadwalnya.
+          const jadwalKeluarId = await sesiModel.getJadwalKeluarId(
+            openSesiAktif.jadwal_id
+          );
+          cocok =
+            jadwalKeluarId != null &&
+            String(jadwalKeluarId) === String(body.absen_type_id);
+        } else {
+          // Jalur non-jadwal / lembur: kategori keluar harus == kategori sesi open.
+          cocok =
+            String(getTimeDB.kategori_absen || "") ===
+            String(openSesiAktif.kategori_absen || "");
+        }
+
+        if (!cocok) {
+          removeUploadedImage(file.filename);
+
+          return res.status(400).json({
+            message: `Tipe absen keluar tidak cocok dengan absen masuk Anda (shift ${
+              openSesiAktif.kategori_absen || "-"
+            }). Pilih tipe keluar yang sesuai.`,
+            status: "failed",
+            status_code: "400",
+          });
+        }
+      }
     }
 
     const startTimeDBMoment = moment
@@ -212,6 +277,68 @@ const createAbsensi = async (req, res) => {
       .format("HH:mm:ss");
     const timeAbsenMomentFormatted = timeAbsenMoment.format("HH:mm:ss");
     const potonganLate = Number(getPotonganLate?.value || 0);
+
+    // Guard window absen MASUK — berlaku untuk SEMUA jalur (jadwal-harian,
+    // lembur, non-jadwal retail biasa). Keluar & tipe non-masuk tak kena.
+    //   BATAS BAWAH: hanya boleh mulai 1 jam sebelum start_time (ex 15:00 → 14:00).
+    //   BATAS ATAS : tak boleh masuk bila sudah lewat JAM PULANG shift
+    //                (start_time tipe KELUAR pasangan). Percuma masuk kalau shift
+    //                sudah usai. Cross-date (keluar besok) TAK kena batas atas.
+    if (isMasuk && !isKeluar) {
+      const EARLY_MASUK_WINDOW_MINUTES = 60;
+      const toMinutes = (hhmmss) => {
+        const [h, m] = String(hhmmss).split(":").map((n) => parseInt(n, 10));
+        return h * 60 + m;
+      };
+      const nowMin = toMinutes(timeAbsenMomentFormatted);
+      const startMin = toMinutes(startTimeDBMoment);
+      // Selisih menit menuju start (positif = belum sampai jam masuk). Tangani
+      // wrap tengah malam: pilih jarak terpendek pada siklus 24 jam.
+      let minutesUntilStart = startMin - nowMin;
+      if (minutesUntilStart > 720) minutesUntilStart -= 1440;
+      if (minutesUntilStart < -720) minutesUntilStart += 1440;
+
+      // Batas bawah: terlalu awal (>1 jam sebelum start).
+      if (minutesUntilStart > EARLY_MASUK_WINDOW_MINUTES) {
+        removeUploadedImage(file.filename);
+        return res.status(400).json({
+          message: `Absen masuk baru dibuka 1 jam sebelum jam masuk (${startTimeDBMoment.slice(
+            0,
+            5
+          )}). Silakan absen mulai pukul ${moment(startTimeDBMoment, "HH:mm:ss")
+            .subtract(EARLY_MASUK_WINDOW_MINUTES, "minutes")
+            .format("HH:mm")}.`,
+          status: "failed",
+          status_code: "400",
+        });
+      }
+
+      // Batas atas: sudah lewat jam pulang shift. Skip untuk cross-date
+      // (keluar jatuh besok, jadi hari masuk tak mungkin "lewat pulang").
+      if (Number(getTimeDB.is_cross_date) !== 1) {
+        const keluarStart = await absensiModel.getKeluarStartTimeByName(
+          getTimeDB.name
+        );
+        if (keluarStart) {
+          const keluarStartFmt = moment
+            .tz(keluarStart, "HH:mm:ss", timezone)
+            .format("HH:mm:ss");
+          const keluarMin = toMinutes(keluarStartFmt);
+          // Sudah lewat jam pulang bila now >= jam pulang (same-day shift).
+          if (nowMin >= keluarMin) {
+            removeUploadedImage(file.filename);
+            return res.status(400).json({
+              message: `Shift ini sudah berakhir (jam pulang ${keluarStartFmt.slice(
+                0,
+                5
+              )}). Absen masuk tidak bisa dilakukan.`,
+              status: "failed",
+              status_code: "400",
+            });
+          }
+        }
+      }
+    }
 
     if (timeAbsenMomentFormatted < startTimeDBMoment) {
       status_absen = 1;
@@ -300,6 +427,16 @@ const createAbsensi = async (req, res) => {
           });
         }
       } else {
+        // Auto-close sesi BASI (lupa keluar) sebelum buka sesi baru: tandai
+        // 'incomplete' sesi open tanggal lampau yang tipe masuknya same-day
+        // (is_cross_date=0). Sesi cross-date sah (SUBUH/SORE 9 JAM) tak disentuh.
+        // Cegah user terblokir + jaga akurasi lembur-guard.
+        await sesiModel.markStaleOpenSesiIncomplete(
+          conn,
+          body.user_id,
+          body.is_lembur
+        );
+
         // Absen masuk → buka sesi baru. Resolve jadwal_id (regular Sales Toko/Trainee).
         const jadwalId = body.is_lembur
           ? null
@@ -676,6 +813,135 @@ const rekapKalender = async (req, res) => {
   }
 };
 
+// Koreksi absen (admin). Ubah jam/status/catatan 1 baris; recompute status_absen
+// + potongan dari waktu baru; sinkron absensi_sesi; audit ke log_activity.
+// Semua dalam 1 transaksi. Tipe absen & retail TIDAK diubah (di luar scope).
+const koreksiAbsen = async (req, res) => {
+  const { absenId } = req.params;
+  const adminId = req.user?.id;
+  const { absen_time, status_absen: statusInput, reason } = req.body;
+
+  if (!absen_time) {
+    return res.status(400).json({
+      message: "Waktu absen (absen_time) wajib diisi.",
+      status: "failed",
+      status_code: "400",
+    });
+  }
+
+  try {
+    const oldRow = await absensiModel.getAbsensiById(absenId);
+    if (!oldRow) {
+      return res.status(404).json({
+        message: "Data absensi tidak ditemukan.",
+        status: "failed",
+        status_code: "404",
+      });
+    }
+
+    const getTimeDB = await absensiModel.getTimeDB(oldRow.absen_type_id);
+    const getPotonganLate = await absensiModel.getPotonganLate(1);
+    const potonganLate = Number(getPotonganLate?.value || 0);
+
+    const newMoment = moment.tz(absen_time, "YYYY-MM-DD HH:mm:ss", timezone);
+    if (!newMoment.isValid()) {
+      return res.status(400).json({
+        message: "Format waktu absen tidak valid (YYYY-MM-DD HH:mm:ss).",
+        status: "failed",
+        status_code: "400",
+      });
+    }
+    const timeAbsenFull = newMoment.format("YYYY-MM-DD HH:mm:ss");
+
+    // Recompute status_absen + potongan dari waktu baru vs window tipe.
+    // Bila admin kirim status_absen eksplisit → pakai; else derive dari end_time.
+    const endTimeDB = moment
+      .tz(getTimeDB.end_time, "HH:mm:ss", timezone)
+      .format("HH:mm:ss");
+    const newTimeHHmmss = newMoment.format("HH:mm:ss");
+
+    let status_absen;
+    if (statusInput === 1 || statusInput === 2 || statusInput === "1" || statusInput === "2") {
+      status_absen = Number(statusInput);
+    } else {
+      status_absen = newTimeHHmmss < endTimeDB ? 1 : 2;
+    }
+
+    let potongan = 0;
+    if (status_absen === 2) {
+      const diffMinutes = moment(newTimeHHmmss, "HH:mm:ss").diff(
+        moment(endTimeDB, "HH:mm:ss"),
+        "minutes"
+      );
+      if (diffMinutes > 15) {
+        potongan = potonganLate;
+      }
+    }
+
+    const updatedAt = moment().tz(timezone).format("YYYY-MM-DD HH:mm:ss");
+    const newReason = reason !== undefined ? reason : oldRow.reason;
+
+    const conn = await dbpool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      await absensiModel.koreksiAbsen(
+        conn,
+        absenId,
+        {
+          absen_time: timeAbsenFull,
+          status_absen,
+          potongan,
+          reason: newReason,
+          updated_at: updatedAt,
+        },
+        adminId,
+        oldRow
+      );
+
+      // Sinkron sesi: bila baris = masuk_absensi_id & tanggal bergeser → update.
+      const sesi = await sesiModel.findSesiByAbsensiId(conn, absenId);
+      if (sesi && String(sesi.masuk_absensi_id) === String(absenId)) {
+        const newTanggal = newMoment.format("YYYY-MM-DD");
+        const oldTanggal = moment(sesi.tanggal).format("YYYY-MM-DD");
+        if (newTanggal !== oldTanggal) {
+          await sesiModel.updateSesiTanggal(conn, sesi.sesi_id, newTanggal, updatedAt);
+        }
+      }
+
+      await conn.commit();
+    } catch (txError) {
+      await conn.rollback();
+      throw txError;
+    } finally {
+      conn.release();
+    }
+
+    return res.json({
+      message: "Koreksi absen berhasil.",
+      status: "success",
+      status_code: "200",
+      data: {
+        absensi_id: Number(absenId),
+        absen_time: timeAbsenFull,
+        status_absen,
+        potongan,
+        reason: newReason,
+        updated_by: adminId,
+        updated_at: updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error("Error koreksiAbsen:", error);
+    return res.status(500).json({
+      message: "Internal Server Error",
+      status: "failed",
+      status_code: "500",
+      serverMessage: error.message,
+    });
+  }
+};
+
 module.exports = {
   createAbsensi,
   approveAbsen,
@@ -686,5 +952,6 @@ module.exports = {
   totalAbsenPerMonth,
   cekFeePeruser,
   historyAbsensiAllUser,
+  koreksiAbsen,
   rekapKalender,
 };

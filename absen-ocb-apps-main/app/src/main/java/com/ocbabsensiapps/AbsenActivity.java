@@ -86,6 +86,7 @@ public class AbsenActivity extends AppCompatActivity {
 
     private GoogleMap mMap;
     private String evidenceUrl = "", absen_id, description, retail_id, targetLat, targetLng, radius, isNeedApprove = "0", reason, retail_name;
+    private String isLembur = "0", startTime = "";
     private TextView textViewLocationStatus, textViewUploadStatus, textViewAbsenTitle, textViewRetailName, textViewLoadingMessage;
     private ImageView imagePreview;
     private VideoView videoPreview;
@@ -141,6 +142,10 @@ public class AbsenActivity extends AppCompatActivity {
             targetLng = getIntent().getStringExtra("longitude");
             radius = getIntent().getStringExtra("radius");
             retail_name = getIntent().getStringExtra("retail_name");
+            isLembur = intent.getStringExtra("is_lembur");
+            if (isLembur == null) isLembur = "0";
+            startTime = intent.getStringExtra("start_time");
+            if (startTime == null) startTime = "";
             textViewAbsenTitle.setText(description);
             textViewRetailName.setText(retail_name);
             try {
@@ -417,6 +422,18 @@ public class AbsenActivity extends AppCompatActivity {
     }
 
     private void submitAbsen() {
+        // Pre-check early-masuk (1 jam sebelum start_time) — cegah upload sia-sia.
+        // BE tetap sumber kebenaran (400). Cek untuk tipe MASUK yang punya start_time.
+        AbsenItem probe = new AbsenItem(absen_id, "", description == null ? "" : description,
+                retail_id, targetLat, targetLng, radius, startTime, "", retail_name, "0", "");
+        AbsenLogic.EarlyCheck ec = AbsenLogic.checkEarlyMasuk(probe);
+        if (ec.blocked) {
+            Toast.makeText(this,
+                    "Absen masuk baru dibuka 1 jam sebelum jam masuk (" + ec.startAt
+                            + "). Silakan absen mulai pukul " + ec.openAt + ".",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
         sendAbsenToApi(userLat, userLng, photoFile);
     }
 
@@ -547,6 +564,14 @@ public class AbsenActivity extends AppCompatActivity {
         Map<String, String> headers = new HashMap<>();
         headers.put("Authorization", "Bearer " + authToken);
 
+        // Reason: gabung catatan lembur (bila lembur) + catatan user.
+        String reasonSubmit = catatan;
+        if ("1".equals(isLembur)) {
+            String lem = "Lembur";
+            reasonSubmit = catatan == null || catatan.trim().isEmpty()
+                    ? lem : (lem + "; " + catatan);
+        }
+
         Map<String, String> params = new HashMap<>();
         params.put("user_id", userId);
         params.put("retail_id", retail_id);
@@ -554,7 +579,11 @@ public class AbsenActivity extends AppCompatActivity {
         params.put("latitude", String.valueOf(userLat));
         params.put("longitude", String.valueOf(userLng));
         params.put("is_approval", isNeedApprove);
-        params.put("reason", catatan);
+        params.put("reason", reasonSubmit);
+        // is_lembur ditentukan ulang di BE (sumber terpercaya), tapi kirim hint.
+        if ("1".equals(isLembur)) {
+            params.put("is_lembur", "1");
+        }
 
 
         String mimeType = getMimeType(evidenceUrl);

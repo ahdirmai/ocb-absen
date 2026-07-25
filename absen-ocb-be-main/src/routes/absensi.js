@@ -27,6 +27,8 @@ router.post('/reject-absensi/:absenId', authenticateToken, absensiController.rej
 
 router.post('/validasi/:absenId', authenticateToken, absensiController.validasiAbsen);
 
+router.post('/koreksi/:absenId', authenticateToken, absensiController.koreksiAbsen);
+
 router.get('/rekap-kalender', authenticateToken, absensiController.rekapKalender);
 
 module.exports=router

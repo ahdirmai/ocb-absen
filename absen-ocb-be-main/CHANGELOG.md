@@ -3,6 +3,81 @@
 ## [Unreleased]
 
 ### Added
+- **Android app web-parity (layar attempt absen)** (`absen-ocb-apps-main`, native Java) — port logika keputusan dari web `AbsenKaryawan.jsx`. Home & History tak disentuh.
+  - `AbsenLogic.java` (baru): ~15 helper port dari web (direction, isSameLocalDate, isRejected, cross-date deadline+grace 3h, findOpenRegularMasuk, buildTodayAttendanceStatus, nextRegularDirection, attendanceMode, hasTodayForTimeCategory, checkEarlyMasuk window 60mnt, haversine). `HistoryItem.java` (baru): model history dgn sesi_status/sesi_direction/is_lembur/is_cross_date/keluar_start_time.
+  - `AbsensiActivity`: fetch berantai history→shift-user→lembur-types→retail; arah-aware (tampilkan hanya tipe arah berikutnya masuk/keluar, cross-date SUBUH diarahkan keluar); buang gate `is_absen_today` per-baris. Mode lembur: tombol "Mulai Lembur" (muncul bila regular komplit/jadwal non-mid-shift), spinner OC (retail picker), list ganti tipe lembur komplemen.
+  - `AbsenAdapter`: icon per-arah, teruskan `is_lembur`+`start_time`+retail OC lembur via intent, sembunyikan retail item saat mode lembur (OC dari spinner). `AbsenActivity`: baca+kirim `is_lembur`, pre-check early-masuk. `AbsenItem` +is_cross_date/keluar_start_time/is_lembur.
+  - `build.gradle` versionCode 1→2 (upgrade-install timpa). Endpoint via `Constant.java` (prod default).
+
+### Changed
+- **Guard window absen masuk diperluas ke SEMUA jalur + batas atas jam pulang** (`absensi.controller.js`) — sebelumnya batas 1-jam-sebelum hanya jadwal-harian + lembur.
+  - Sekarang non-jadwal (retail biasa) juga kena batas bawah (1 jam sebelum `start_time`).
+  - **Batas atas baru**: absen masuk ditolak bila sudah lewat JAM PULANG shift (= `start_time` tipe KELUAR pasangan, match by `name`, helper `getKeluarStartTimeByName`). Cross-date (keluar besok) skip batas atas. Ex: PAGI masuk 08:00 pulang 17:00 → masuk hanya 07:00-16:59; jam 17:00+ ditolak. Enforcement BE only.
+
+### Added
+- **UI/UX baru halaman Absensi (toggle Lama/Baru)** (`Absensi.jsx`) — tampilan modern clean, akses via toggle segmented di header (persist `localStorage`, default Baru). UI lama tetap utuh (`uiMode='lama'`). FE only, tak sentuh BE/route/DB.
+  - Stat cards (Total/Ontime/Telat/Lembur), toolbar rapi (search global multi-field + date range + Export + quick-filter chip Valid/Invalid/Telat/Lembur), DataTable modern (sortable, badge status pill berwarna, badge Lembur, foto thumbnail, aksi ikon+tooltip, sticky header, empty/loading state).
+  - Reuse penuh handler existing (validasi/ignore/koreksi/export/preview) + modal — nol duplikasi logika.
+
+- **Koreksi Absen (admin)** — admin bisa koreksi jam/status/catatan 1 baris `absensi` dari halaman Absensi. Lihat `docs/absensi-koreksi-plan.md`.
+  - DB: kolom audit `absensi.updated_by` + `updated_at` (`docs/absensi-koreksi.sql` / `scripts/migrate-absensi-koreksi.js` idempotent). `updated_at IS NOT NULL` = pernah dikoreksi.
+  - BE model (`absensi.model.js`): `getAbsensiById`, `koreksiAbsen(conn, ...)` transaksional + audit old→new ke `log_activity`. `historyAbsensiAllUser` SELECT +`status_absen` +`start_time` +`end_time` (prefill FE). `absensiSesi.model.js`: `findSesiByAbsensiId`, `updateSesiTanggal`.
+  - BE controller (`absensi.controller.js` `koreksiAbsen`): recompute `status_absen` (ontime/telat vs `end_time`) + `potongan` (telat >15mnt → potonganLate) dari waktu baru; admin boleh override status eksplisit. Sinkron `absensi_sesi.tanggal` bila jam masuk geser tanggal. Transaksi + rollback. Route `POST /api/absensi/koreksi/:absenId`.
+  - FE (`Absensi.jsx`): kolom aksi "Koreksi" + modal (waktu `datetime-local`, status Ontime/Telat/Otomatis, catatan). Save POST + optimistic update.
+
+- **Lembur staff jadwal-harian: cover shift lain (kategori komplemen)** — staff jadwal-harian (mis. di-assign SUBUH) bisa menggantikan karyawan toko lain di shift beda via lembur. Sebelumnya lembur hardcode PAGI saja.
+  - BE (`absenManagement.model.js` `getLemburTypes`): jalur jadwal-harian → tipe lembur = kategori KOMPLEMEN shift assigned hari ini (assigned Malam/SUBUH → Pagi+Sore; Sore → Pagi+Malam; Pagi → Sore+Malam). Tetap exclude tipe jadwal hari itu + Trainee. Non-jadwal → tetap PAGI-only (legacy). Jadwal-harian tanpa jadwal hari ini → kosong.
+  - BE (`absensi.controller.js` hard-guard lembur): jalur jadwal-harian → lembur boleh sebelum/sesudah shift regular, diblokir HANYA saat sedang menjalani shift regular (sesi regular OPEN, `includeYesterday` tangkap subuh cross-date). Non-jadwal → tetap wajib regular komplit dulu. Guard lembur-keluar-wajib-ada-lembur-masuk tak berubah (semua jalur).
+  - FE (`AbsenKaryawan.jsx`): button "Mulai Lembur" — `usesJadwalHarian ? !regularInProgress : hasCompletedRegularAttendance`. `regularInProgress` = ada sesi regular open (mid-shift). Menjaga fix mid-shift (button hidden saat masuk regular belum keluar).
+  - **Hapus filter window jam lembur** — dulu tipe lembur cuma tampil saat jam masuk window kategorinya (`isWithinShiftWindow`), bikin shift Sore tak muncul sebelum 14:00. Diganti: semua tipe komplemen tampil, batas waktu ditegakkan guard 1-jam-sebelum-start. BE early-masuk guard (`absensi.controller.js`) diperluas cover LEMBUR masuk (bukan cuma regular jadwal-harian). FE `filteredLemburTypes` drop `isWithinShiftWindow`; pre-check `checkEarlyMasuk` juga jalan di mode lembur.
+  - **Card "Status Hari Ini" adaptif mode + info lembur** (`AbsenKaryawan.jsx`): mode lembur aktif → card tampil status LEMBUR (header "Status Lembur", `buildTodayLemburStatus`); mode regular → status regular. Card regular tampil badge kecil "Ada absen lembur hari ini" bila ada lembur (`hasLemburToday`, independen dari regular-complete).
+
+### Fixed
+- **Absen lembur salah tampil sbg status regular** (`AbsenKaryawan.jsx` `buildTodayAttendanceStatus`) — card "Status Hari Ini" (regular) sebelumnya menghitung baris `is_lembur=1`, bikin lembur muncul sbg masuk/keluar regular + salah picu label "Attempt Lembur" pd tipe regular. Fix: exclude `is_lembur=1` dari card regular.
+- **Arah attempt regular salah "keluar" saat ada lembur** — FE fallback `is_absen_today` (hitung SEMUA absen termasuk lembur) keliru anggap masuk regular sudah → tipe regular (subuh) diarahkan "keluar". Fix: skip fallback bila ada absen lembur hari ini (`hasLemburTodayRows`); sumber arah regular = `todayStatus` (sudah exclude lembur).
+- **Button "Mulai Lembur" tak berfungsi setelah regular komplit** (`AbsenKaryawan.jsx`) — `effectiveLemburMode` clause manual hanya `attendanceMode === null` (belum absen), jadi user yg sudah selesai regular (`attendanceMode='regular'`) klik button tapi mode lembur tak aktif. Fix: clause → `isLemburMode && !regularInProgress` (cover regular komplit + belum absen, tetap blokir mid-shift). Reset-effect `isLemburMode` hanya saat `lemburComplete || regularInProgress`. `lemburComplete` deteksi mode "mixed" (regular+lembur) juga.
+
+- **Batas absen masuk: 1 jam sebelum jam masuk (khusus jadwal harian)** — user jalur jadwal-harian hanya boleh absen masuk mulai 1 jam sebelum `start_time` tipe. Ex: start 15:00 → paling awal 14:00. Telat tetap boleh. User non-jadwal tak dibatasi.
+  - BE (`absensi.controller.js`): guard `isMasuk && usesJadwalHarian`, tolak 400 bila `minutesUntilStart > 60` (`EARLY_MASUK_WINDOW_MINUTES`). Wrap tengah malam ditangani. `userUsesJadwalHarian` di-export dari `absenManagement.model.js`.
+  - BE (`absenManagement.controller.js`): shift-user response +`uses_jadwal_harian`.
+  - FE (`AbsenKaryawan.jsx`): `checkEarlyMasuk` pre-check di `handleSubmit` (hanya bila `uses_jadwal_harian` & non-lembur) → warning, cegah upload foto sia-sia.
+
+### Fixed
+- **Button "Mulai Lembur" muncul sebelum regular selesai** (`AbsenKaryawan.jsx`) — syarat button pakai `todayHasRegular` (cukup ada masuk), diganti `hasCompletedRegularAttendance` (masuk+keluar komplit). Selaras BE hard-guard lembur.
+- **Sesi cross-date `closed` salah kunci mode absen** — `attendanceMode` exclude row `is_cross_date=1` bersesi `closed` (penutup shift kemarin, bukan absen hari ini). Cegah salah lock mode + salah picu lembur.
+
+### Changed
+- **Halaman `/jadwal-harian` hanya tampilkan OC + karyawan yang jadwal-harian AKTIF** — sebelumnya dropdown OC tampilkan semua OC 1-40 dan matrix tampilkan semua karyawan retail, walau shift jadwal-harian tak aktif.
+  - BE endpoint baru `GET /api/jadwal-harian/active-retails` (`getActiveJadwalRetails`): retail dgn shifting `uses_jadwal_harian=1` + periode mencakup CURDATE(). CSV `retail_id` di-expand via `FIND_IN_SET` join retail.
+  - BE `getEmployeesByRetail` +filter `uses_jadwal_harian=1` + periode aktif (selaras `userUsesJadwalHarian`) — karyawan tanpa shift jadwal-harian aktif tak masuk matrix.
+  - FE (`JadwalHarian.jsx`): dropdown OC sumber ganti dari `/retail` → `/jadwal-harian/active-retails`. Fix `setJadwalRows`→`setMonthJadwal` (refresh setelah import Excel).
+
+### Added
+- **Flag `is_cross_date` di tipe absen + auto-close sesi basi** — bedakan "cross-date sah" (shift keluar besok) vs "lupa keluar" (sesi basi) yang dua-duanya menghasilkan sesi `open`. Lihat `docs/cross-date-flag-plan.md`.
+  - DB: kolom `tipe_absen.is_cross_date` (`docs/cross-date-flag.sql`), backfill SUBUH/SORE 9 JAM = 1, sisanya 0. Admin set via toggle CatAbsen.
+  - BE model: `createNewAbsenType`/`updateAbsenType` + `is_cross_date`; `getAlltypeAbsen` + `historyAbsensiPerUser` SELECT `is_cross_date`.
+  - BE auto-close (`absensi.controller.js` blok masuk): `markStaleOpenSesiIncomplete` tandai sesi open tanggal lampau bertipe `is_cross_date=0` jadi `incomplete` sebelum buka sesi baru — cegah user terblokir + jaga akurasi lembur-guard. Sesi cross-date sah tak disentuh.
+  - FE (`AbsenKaryawan.jsx`): `findOpenRegularMasuk` hanya trigger "wajib keluar" untuk sesi open `is_cross_date=1`. Sesi basi (`is_cross_date=0`) diabaikan → user boleh absen masuk baru.
+  - **Batas 3 jam cross-date**: "wajib keluar" untuk sesi cross-date hanya berlaku sampai 3 jam setelah jam keluar terjadwal (tanggal masuk +1 hari + grace 3 jam, `CROSS_DATE_KELUAR_GRACE_HOURS`). Jam keluar = `start_time` tipe KELUAR pasangan (match by `name`), BUKAN `end_time` masuk (itu window absen masuk sempit, mis. SUBUH 23:00-23:10). Lewat batas → dianggap lupa keluar: FE izinkan absen masuk baru, BE `markStaleOpenSesiIncomplete` tandai sesi jadi `incomplete`.
+  - `absensi.model.js` history SELECT + subquery `keluar_start_time` (start_time tipe keluar pasangan) untuk deadline FE. `absensiSesi.model.js` markStale LEFT JOIN tipe keluar via `name`.
+  - FE (`CatAbsen.jsx`): toggle "Absen Lintas Hari (keluar besok)?" di form tambah + edit.
+
+- **Live clock + card "Status Hari Ini" sadar sesi cross-date** (`AbsenKaryawan.jsx`)
+  - Jam realtime (hari, tanggal, jam:menit:detik) tick per detik di atas halaman.
+  - Card status: header dinamis → nama tipe absen bila sesi cross-date aktif (bukan "Status Hari Ini" statis). Waktu absen tampil tanggal + jam.
+  - `buildTodayAttendanceStatus` sekarang sesi-aware: hitung masuk shift cross-date yang sesinya masih `open` (masuk kemarin, belum keluar); TAPI exclude row cross-date bersesi `closed` (shift kemarin sudah tuntas — milik tanggal mulai, bukan hari ini). Cegah keluar penutup shift kemarin salah tampil sbg absen hari ini + salah picu jalur lembur.
+
+### Fixed
+- **FE arah absen cross-midnight (shift SORE 9 JAM / SUBUH)** — user dengan shift yang masuk kemarin & keluar hari ini (mis. SUBUH masuk 23:00, keluar 08:00 besok) sebelumnya salah diarahkan ke "absen masuk" lagi, bukan "keluar". Penyebab: FE `nextRegularDirection` pakai `isSameLocalDate` (hari ini saja), tak lihat masuk kemarin.
+  - `AbsenKaryawan.jsx`: deteksi sesi regular open dari history (`sesi_status='open'`, `sesi_direction='masuk'`, non-lembur, `is_cross_date=1`) — bila ada, override arah ke "keluar" + lock kategori tipe keluar ke sesi itu. Sumber kebenaran = `absensi_sesi.status` + flag `is_cross_date`, bukan tanggal/jam.
+
+- **Guard tipe absen keluar harus cocok dengan masuk** — cegah user pilih tipe keluar beda kategori/jadwal dari absen masuknya, yang bikin sesi pecah (masuk menggantung `open` + keluar jadi `incomplete` terpisah)
+  - BE (`absensi.controller.js` blok `isKeluar`): sebelum insert, `findAnyOpenSesi` cari sesi open aktif user; bila ada → tipe keluar divalidasi. Jalur jadwal harian: `absen_type_id` harus == `jadwal.absen_keluar_id`. Jalur non-jadwal/lembur: `kategori_absen` keluar harus == kategori sesi open. Tak cocok → HTTP 400.
+  - Berlaku 3 jalur: non-jadwal, lembur (`is_lembur` scope terpisah), jadwal harian. Guard server menutup celah bypass API (FE lock saja tidak cukup).
+  - FE (`AbsenKaryawan.jsx`): dropdown tipe keluar regular dikunci ke kategori absen masuk hari ini.
+  - Model baru: `absensiSesi.model.js` +`findAnyOpenSesi`, +`getJadwalKeluarId`.
+
+### Added
 - **Jadwal Shift Harian per-orang** — hanya untuk Sales Toko (`category_user=18`) & Trainee Sales Toko (`21`)
   - Tabel `jadwal_harian` (lihat `docs/jadwal-harian.sql`) — 1 baris = user + tanggal + retail + `absen_masuk_id` + `absen_keluar_id` (FK ke `tipe_absen.absen_id`), `UNIQUE(user_id, tanggal)`
   - Hanya tipe absen Masuk + Keluar yang ditampilkan (Kebersihan/Parkir/Display tidak)

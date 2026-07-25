@@ -86,6 +86,25 @@ const buildTanggalList = (body) => {
   return [];
 };
 
+const getActiveJadwalRetails = async (_req, res) => {
+  try {
+    const [data] = await jadwalHarianModel.getActiveJadwalRetails();
+    res.json({
+      message: "Get active jadwal-harian retails success",
+      status: "success",
+      status_code: "200",
+      data,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Internal Server Error",
+      status: "failed",
+      status_code: "500",
+      serverMessage: error.message || error,
+    });
+  }
+};
+
 const getEmployeesByRetail = async (req, res) => {
   const { retailId } = req.params;
   try {
@@ -553,6 +572,7 @@ const importJadwal = async (req, res) => {
 
 module.exports = {
   getEligibleUsers,
+  getActiveJadwalRetails,
   getEmployeesByRetail,
   getJadwal,
   getKategoriShift,

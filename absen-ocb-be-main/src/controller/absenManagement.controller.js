@@ -211,6 +211,7 @@ const getTypeAbsenPerShift = async(req, res) =>{
             status_code : "200",
             is_absen_today : isAbsenToday,
             no_jadwal_assigned : noJadwalAssigned,
+            uses_jadwal_harian : jadwalStatus.isShiftScheduled,
             data : uniqueData
         })
     }

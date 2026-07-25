@@ -71,13 +71,14 @@ const JadwalHarian = () => {
 
   const monthStr = format(monthDate, "yyyy-MM");
 
-  // --- Fetch retails sekali (OC 1-40) ---
+  // --- Fetch retails sekali: HANYA OC dgn shift jadwal-harian AKTIF hari ini ---
   useEffect(() => {
     const fetchInit = async () => {
       try {
-        const retailRes = await axios.get(`${VITE_API_URL}/retail`, {
-          headers: authHeaders(),
-        });
+        const retailRes = await axios.get(
+          `${VITE_API_URL}/jadwal-harian/active-retails`,
+          { headers: authHeaders() }
+        );
         setRetails(
           (retailRes.data.data || [])
             .filter((r) => isOcRetail(r.name))
@@ -294,7 +295,7 @@ const JadwalHarian = () => {
             { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
           );
           if (res2.data.status === "success") {
-            setJadwalRows(res2.data.data || []);
+            setMonthJadwal(res2.data.data || []);
           }
         }
       } else {

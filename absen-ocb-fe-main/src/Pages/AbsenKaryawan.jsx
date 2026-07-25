@@ -15,26 +15,6 @@ const absenDirectionLabels = {
   keluar: "Absen Keluar",
 };
 
-// Shift window per kategori_absen (bukan window absen sempit).
-const SHIFT_WINDOWS = {
-  pagi: { start: "06:00", end: "16:00" },
-  sore: { start: "14:00", end: "23:59" },
-  malam: { start: "22:00", end: "08:00" },
-};
-
-const isWithinShiftWindow = (kategoriAbsen) => {
-  const k = String(kategoriAbsen || "").toLowerCase();
-  const win = SHIFT_WINDOWS[k];
-  if (!win) return true; // unknown kategori → tampilkan saja
-  const now = new Date();
-  const hhmm = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
-  if (win.start <= win.end) {
-    return hhmm >= win.start && hhmm <= win.end;
-  }
-  // Cross-midnight (malam 22:00 - 08:00)
-  return hhmm >= win.start || hhmm <= win.end;
-};
-
 const getAbsenDirection = (item) => {
   const description = String(item?.description || "").toLowerCase();
 
@@ -47,6 +27,36 @@ const getAbsenDirection = (item) => {
   }
 
   return "";
+};
+
+// Absen masuk baru dibuka 1 jam sebelum jam masuk (start_time). Selaras guard BE.
+const EARLY_MASUK_WINDOW_MINUTES = 60;
+
+// Cek apakah absen masuk masih terlalu awal (> 1 jam sebelum start_time).
+// Return { blocked, openAt } — openAt = "HH:mm" jam mulai boleh absen.
+// Telat (setelah start_time) tak diblok. Wrap tengah malam ditangani.
+const checkEarlyMasuk = (type, now = new Date()) => {
+  if (getAbsenDirection(type) !== "masuk") return { blocked: false };
+  const start = String(type?.start_time || "").trim();
+  if (!start) return { blocked: false };
+  const [sh, sm] = start.split(":").map((n) => parseInt(n, 10));
+  if (Number.isNaN(sh) || Number.isNaN(sm)) return { blocked: false };
+
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const startMin = sh * 60 + sm;
+  let minutesUntilStart = startMin - nowMin;
+  if (minutesUntilStart > 720) minutesUntilStart -= 1440;
+  if (minutesUntilStart < -720) minutesUntilStart += 1440;
+
+  const openMin = (startMin - EARLY_MASUK_WINDOW_MINUTES + 1440) % 1440;
+  const openAt = `${String(Math.floor(openMin / 60)).padStart(2, "0")}:${String(
+    openMin % 60
+  ).padStart(2, "0")}`;
+  return {
+    blocked: minutesUntilStart > EARLY_MASUK_WINDOW_MINUTES,
+    openAt,
+    startAt: `${String(sh).padStart(2, "0")}:${String(sm).padStart(2, "0")}`,
+  };
 };
 
 const isSameLocalDate = (dateValue, compareDate = new Date()) => {
@@ -77,13 +87,106 @@ const isRejectedAttendance = (item) => {
   );
 };
 
+// Batas waktu keluar cross-date: 3 jam setelah jam keluar terjadwal. Lewat
+// batas → sesi dianggap basi (lupa keluar), user boleh absen masuk baru.
+const CROSS_DATE_KELUAR_GRACE_HOURS = 3;
+
+// Deadline keluar utk sesi cross-date open. Jam keluar terjadwal = start_time
+// tipe KELUAR pasangannya (`keluar_start_time`, di-join BE), BUKAN end_time
+// masuk (itu window absen masuk sempit, mis. SUBUH 23:00-23:10). Keluar jatuh
+// hari BERIKUTNYA setelah tanggal masuk (definisi cross-date). Deadline = jam
+// keluar + grace 3 jam. Return ms epoch atau null bila data tak cukup (tanpa
+// deadline → jangan blokir, anggap masih wajib keluar).
+const getCrossDateKeluarDeadline = (masukRow) => {
+  const masukTime = masukRow?.absen_time ? new Date(masukRow.absen_time) : null;
+  const keluarTime = String(masukRow?.keluar_start_time || "").trim(); // "HH:mm[:ss]"
+  if (!masukTime || Number.isNaN(masukTime.getTime()) || !keluarTime) return null;
+
+  const [h, m] = keluarTime.split(":").map((n) => parseInt(n, 10));
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+
+  const keluar = new Date(masukTime);
+  keluar.setDate(keluar.getDate() + 1);
+  keluar.setHours(h, m, 0, 0);
+  return keluar.getTime() + CROSS_DATE_KELUAR_GRACE_HOURS * 60 * 60 * 1000;
+};
+
+// Cari sesi regular open LINTAS-HARI yang wajib keluar (shift SORE 9 JAM /
+// SUBUH yang masuk kemarin, keluar hari ini). Hanya tipe is_cross_date=1 yang
+// dianggap "wajib keluar", DAN masih dalam 3 jam dari jam keluar terjadwal.
+// Sesi open is_cross_date=0 tanggal lampau, ATAU cross-date yang sudah lewat
+// batas 3 jam = BASI (lupa keluar) → diabaikan supaya user boleh absen masuk
+// baru (auto-close jadi incomplete di BE). Sumber kebenaran arah = flag tipe +
+// status sesi, bukan tanggal/jam. Return baris masuk (punya kategori_absen untuk
+// lock tipe keluar) atau null. Masuk same-day hari ini ditangani doneDirections.
+const findOpenRegularMasuk = (rows = []) => {
+  const now = Date.now();
+  const openMasuk = rows.filter((item) => {
+    if (
+      !(
+        item?.sesi_status === "open" &&
+        item?.sesi_direction === "masuk" &&
+        item?.is_lembur !== 1 &&
+        item?.is_lembur !== "1" &&
+        (item?.is_cross_date === 1 || item?.is_cross_date === "1") &&
+        !isRejectedAttendance(item)
+      )
+    ) {
+      return false;
+    }
+    // Lewat batas 3 jam dari jam keluar → basi, jangan paksa keluar.
+    const deadline = getCrossDateKeluarDeadline(item);
+    return deadline == null || now <= deadline;
+  });
+  if (openMasuk.length === 0) return null;
+  return openMasuk.sort(
+    (a, b) => new Date(b.absen_time).getTime() - new Date(a.absen_time).getTime()
+  )[0];
+};
+
+// Sesi cross-date aktif = tipe is_cross_date=1, sesi masih OPEN (masuk kemarin,
+// belum keluar), DAN belum lewat deadline keluar (jam keluar terjadwal + grace 3
+// jam). Dipakai agar card tampilkan masuk kemarin untuk shift lintas-hari yang
+// masih BERJALAN. HANYA 'open': sesi 'closed' = shift kemarin sudah tuntas,
+// jangan dihitung sebagai kelengkapan absen hari ini (else salah picu lembur).
+// Absen keluarnya sendiri bertanggal hari ini → tetap tampil via isSameLocalDate.
+const isCrossDateSesiActive = (item, now = Date.now()) => {
+  if (!(item?.is_cross_date === 1 || item?.is_cross_date === "1")) return false;
+  if (item?.sesi_status !== "open") return false;
+  const deadline = getCrossDateKeluarDeadline(item);
+  return deadline == null || now <= deadline;
+};
+
 const buildTodayAttendanceStatus = (rows = []) => {
   const status = { masuk: null, keluar: null };
+  const now = Date.now();
 
   rows.forEach((item) => {
     const direction = getAbsenDirection(item);
 
-    if (!direction || !isSameLocalDate(item.absen_time)) {
+    if (!direction) {
+      return;
+    }
+
+    // Card "Status Hari Ini" = REGULAR saja. Lembur (is_lembur=1) punya panel
+    // "Sedang Lembur" terpisah — jangan campur ke card regular (else absen lembur
+    // salah tampil sbg status masuk/keluar regular + salah picu attempt lembur).
+    if (item?.is_lembur === 1 || item?.is_lembur === "1") {
+      return;
+    }
+
+    // Shift cross-date yang sesinya SUDAH closed = milik tanggal mulainya
+    // (kemarin), bukan hari ini — walau absen keluarnya bertanggal hari ini.
+    // Jangan hitung di card hari ini (else keluar penutup shift kemarin salah
+    // tampil sbg "Absen Keluar hari ini" + salah picu lembur).
+    const isCrossDate = item?.is_cross_date === 1 || item?.is_cross_date === "1";
+    if (isCrossDate && item?.sesi_status === "closed") {
+      return;
+    }
+
+    // Absen hari ini, ATAU masuk shift cross-date yang sesinya masih OPEN (mis.
+    // SUBUH masuk kemarin, belum keluar) — tetap dihitung.
+    if (!isSameLocalDate(item.absen_time) && !isCrossDateSesiActive(item, now)) {
       return;
     }
 
@@ -96,6 +199,26 @@ const buildTodayAttendanceStatus = (rows = []) => {
     }
   });
 
+  return status;
+};
+
+// Status masuk/keluar LEMBUR hari ini (is_lembur=1, non-rejected), untuk card
+// "Status Hari Ini" saat mode lembur aktif. Ambil baris terbaru per arah.
+const buildTodayLemburStatus = (rows = []) => {
+  const status = { masuk: null, keluar: null };
+  rows.forEach((item) => {
+    const direction = getAbsenDirection(item);
+    if (!direction) return;
+    if (item?.is_lembur !== 1 && item?.is_lembur !== "1") return;
+    if (isRejectedAttendance(item)) return;
+    if (!isSameLocalDate(item.absen_time)) return;
+    const current = status[direction];
+    const currentTime = current?.absen_time ? new Date(current.absen_time).getTime() : 0;
+    const itemTime = item.absen_time ? new Date(item.absen_time).getTime() : 0;
+    if (!current || itemTime > currentTime) {
+      status[direction] = item;
+    }
+  });
   return status;
 };
 
@@ -230,6 +353,8 @@ const getAttendanceStatusLabel = (item) => {
 
 const AbsenKaryawan = () => {
   const [loading, setLoading] = useState(false);
+  const [now, setNow] = useState(new Date());
+  const [usesJadwalHarian, setUsesJadwalHarian] = useState(false);
   const [location, setLocation] = useState(initialLocation);
   const [locationError, setLocationError] = useState("");
   const [photo, setPhoto] = useState(null);
@@ -273,6 +398,12 @@ const AbsenKaryawan = () => {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
 
+  // Jam realtime — tick tiap detik.
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const todayAttendanceStatus = useMemo(
     () => buildTodayAttendanceStatus(history),
     [history]
@@ -282,17 +413,34 @@ const AbsenKaryawan = () => {
     todayAttendanceStatus
   );
 
+  // Sedang menjalani shift regular = ada sesi regular OPEN (masuk sudah, keluar
+  // belum), termasuk cross-date (subuh masuk kemarin). Dipakai gate lembur staff
+  // jadwal-harian: boleh lembur kapan saja KECUALI mid-shift (tak bisa 2 tempat).
+  const regularInProgress = useMemo(() => {
+    return history.some(
+      (item) =>
+        item?.sesi_status === "open" &&
+        item?.sesi_direction === "masuk" &&
+        item?.is_lembur !== 1 &&
+        item?.is_lembur !== "1" &&
+        !isRejectedAttendance(item)
+    );
+  }, [history]);
+
+  const todayLemburStatus = useMemo(
+    () => buildTodayLemburStatus(history),
+    [history]
+  );
+
+  // Ada absen lembur hari ini (non-rejected) — untuk info kecil di card regular.
+  const hasLemburToday = Boolean(
+    todayLemburStatus.masuk || todayLemburStatus.keluar
+  );
+
   const todayOvertimeItems = useMemo(
     () => buildTodayOvertimeItems(history),
     [history]
   );
-
-  // Hari ini sudah ada absen regular (is_lembur=0, bukan rejected).
-  const todayHasRegular = useMemo(() => {
-    return history.some(
-      (item) => isSameLocalDate(item.absen_time) && !isRejectedAttendance(item) && item.is_lembur !== 1 && item.is_lembur !== "1"
-    );
-  }, [history]);
 
   // Ada absen pending (menunggu approval) hari ini → blokir attempt baru.
   const todayHasPending = useMemo(() => {
@@ -311,9 +459,17 @@ const AbsenKaryawan = () => {
   }, [history]);
 
   // Lock mode: jika sudah ada absen hari ini → mode terkunci (lembur/regular).
+  // Exclude row cross-date bersesi 'closed' (penutup shift kemarin) — bukan
+  // absen hari ini, jangan kunci mode.
   const attendanceMode = useMemo(() => {
     const todayItems = history.filter(
-      (item) => isSameLocalDate(item.absen_time) && !isRejectedAttendance(item)
+      (item) =>
+        isSameLocalDate(item.absen_time) &&
+        !isRejectedAttendance(item) &&
+        !(
+          (item.is_cross_date === 1 || item.is_cross_date === "1") &&
+          item.sesi_status === "closed"
+        )
     );
     const hasLembur = todayItems.some((item) => item.is_lembur === 1 || item.is_lembur === "1");
     const hasRegular = todayItems.some((item) => item.is_lembur !== 1 && item.is_lembur !== "1");
@@ -343,9 +499,11 @@ const AbsenKaryawan = () => {
     return { todayLembur, hasSesiData, hasOpen, hasClosed, masukRow };
   }, [history]);
 
-  // Cek apakah lembur sudah selesai (masuk+keluar keduanya ada).
+  // Cek apakah lembur sudah selesai (masuk+keluar keduanya ada). Berlaku juga
+  // saat mode "mixed" (regular + lembur) — lembur bisa dilakukan setelah regular
+  // komplit, jadi tak boleh dibatasi attendanceMode==='lembur' saja.
   const lemburComplete = useMemo(() => {
-    if (attendanceMode !== "lembur") return false;
+    if (attendanceMode !== "lembur" && attendanceMode !== "mixed") return false;
     // Prefer sesi: sesi lembur 'closed' = selesai.
     if (todayLemburSesi.hasSesiData) {
       return todayLemburSesi.hasClosed;
@@ -360,16 +518,24 @@ const AbsenKaryawan = () => {
     return masukDone && keluarDone;
   }, [attendanceMode, todayLemburSesi]);
 
-  // Mode terkunci: lembur aktif TAPI belum selesai. Setelah selesai → unlock ke regular.
-  const effectiveLemburMode = (attendanceMode === "lembur" && !lemburComplete) || (attendanceMode === null && isLemburMode);
+  // Mode lembur aktif bila:
+  // - Sesi lembur berjalan (attendanceMode 'lembur' belum selesai), ATAU
+  // - User klik "Mulai Lembur" (isLemburMode) & TIDAK sedang mid-shift regular.
+  //   Cover kasus regular sudah komplit (attendanceMode 'regular') maupun belum
+  //   absen (null) — asalkan bukan mid-shift (regularInProgress).
+  const effectiveLemburMode =
+    (attendanceMode === "lembur" && !lemburComplete) ||
+    (isLemburMode && !regularInProgress);
 
-  // Reset isLemburMode saat mode berubah (lembur selesai → kembali ke regular).
+  // Reset isLemburMode hanya bila mode LEMBUR yang sedang berjalan sudah selesai,
+  // atau saat mid-shift regular (tak boleh lembur). Jangan reset hanya karena
+  // attendanceMode 'regular' komplit — itu justru saat user mulai lembur manual.
   useEffect(() => {
-    if (attendanceMode !== "lembur" || lemburComplete) {
+    if (lemburComplete || regularInProgress) {
       setIsLemburMode(false);
       setSelectedLemburRetail(null);
     }
-  }, [attendanceMode, lemburComplete]);
+  }, [lemburComplete, regularInProgress]);
 
   // Lembur: arah attempt berikutnya. Prefer sesi (open → butuh keluar), else scan description.
   const lemburDirection = useMemo(() => {
@@ -395,9 +561,10 @@ const AbsenKaryawan = () => {
   const filteredLemburTypes = useMemo(() => {
     if (!effectiveLemburMode) return [];
     if (!lemburDirection) return []; // kedua arah selesai → kosong
+    // Tak filter by window jam — semua shift komplemen (pagi/sore/subuh) tampil.
+    // Batas waktu attempt ditegakkan guard BE 1-jam-sebelum-start (+ pre-check FE).
     return lemburTypes.filter((t) => {
       if (getAbsenDirection(t) !== lemburDirection) return false;
-      if (!isWithinShiftWindow(t.kategori_absen)) return false;
       // Lembur keluar: match tipe dgn baris lembur masuk (dari sesi anchor).
       if (lemburDirection === "keluar") {
         const lemburMasuk = todayLemburSesi.masukRow;
@@ -408,10 +575,7 @@ const AbsenKaryawan = () => {
   }, [effectiveLemburMode, lemburDirection, lemburTypes, todayLemburSesi]);
 
   // Check ketersediaan lembur (independent dari effectiveLemburMode) untuk button.
-  const hasAvailableLemburTypes = useMemo(() => {
-    if (lemburTypes.length === 0) return false;
-    return lemburTypes.some((t) => isWithinShiftWindow(t.kategori_absen));
-  }, [lemburTypes]);
+  const hasAvailableLemburTypes = lemburTypes.length > 0;
 
   const activeTypes = effectiveLemburMode ? filteredLemburTypes : absenTypes;
 
@@ -683,6 +847,7 @@ const AbsenKaryawan = () => {
         setNoJadwalMessage(
           response.data.no_jadwal_assigned ? response.data.message : ""
         );
+        setUsesJadwalHarian(Boolean(response.data.uses_jadwal_harian));
 
         const todayStatus = buildTodayAttendanceStatus(historyRows);
         const hasCompletedRegularDay = hasCompletedRegularAttendanceStatus(todayStatus);
@@ -692,20 +857,50 @@ const AbsenKaryawan = () => {
             .map(([direction]) => direction)
         );
 
-        // Fallback untuk response lama: jika backend hanya memberi is_absen_today,
-        // artikan absen masuk sudah tercatat sehingga user diarahkan ke absen keluar.
-        if (doneDirections.size === 0 && Number(response.data.is_absen_today) === 1) {
+        // Fallback response lama: is_absen_today=1 → anggap masuk sudah, arahkan
+        // keluar. TAPI is_absen_today hitung SEMUA absen termasuk LEMBUR, jadi tak
+        // reliable bila hanya ada lembur (regular belum). Skip fallback bila ada
+        // absen lembur hari ini — sumber arah regular = todayStatus (sudah exclude
+        // lembur). Cegah tipe regular (subuh) salah diarahkan "keluar".
+        const hasLemburTodayRows = historyRows.some(
+          (item) =>
+            (item?.is_lembur === 1 || item?.is_lembur === "1") &&
+            isSameLocalDate(item.absen_time) &&
+            !isRejectedAttendance(item)
+        );
+        if (
+          doneDirections.size === 0 &&
+          !hasLemburTodayRows &&
+          Number(response.data.is_absen_today) === 1
+        ) {
           doneDirections.add("masuk");
         }
 
-        const nextRegularDirection = !doneDirections.has("masuk")
-          ? "masuk"
-          : !doneDirections.has("keluar")
-            ? "keluar"
-            : "";
+        // Sesi regular open lintas-hari (mis. SUBUH/SORE 9 JAM masuk kemarin,
+        // keluar hari ini). Bila ada → user WAJIB keluar, override arah "masuk".
+        // Sumber: absensi_sesi.status='open', bukan tanggal (isSameLocalDate
+        // tak lihat masuk kemarin).
+        const openRegularMasuk = findOpenRegularMasuk(historyRows);
+
+        const nextRegularDirection = openRegularMasuk
+          ? "keluar"
+          : !doneDirections.has("masuk")
+            ? "masuk"
+            : !doneDirections.has("keluar")
+              ? "keluar"
+              : "";
         const nextOvertimeDirection = hasCompletedRegularDay
           ? getNextOvertimeDirection(historyRows)
           : "";
+
+        // Kategori absen masuk regular (untuk lock tipe keluar).
+        // Keluar regular harus kategori sama dgn masuk → cegah sesi pecah.
+        // Prefer sesi open lintas-hari; fallback ke masuk hari ini.
+        const masukRegularKategori = String(
+          openRegularMasuk?.kategori_absen ||
+            todayStatus.masuk?.kategori_absen ||
+            ""
+        ).trim();
 
         const filteredTypes = rawTypes
           .filter((type) => {
@@ -719,7 +914,21 @@ const AbsenKaryawan = () => {
               return false;
             }
 
-            return direction === (hasCompletedRegularDay ? nextOvertimeDirection : nextRegularDirection);
+            if (direction !== (hasCompletedRegularDay ? nextOvertimeDirection : nextRegularDirection)) {
+              return false;
+            }
+
+            // Lock keluar regular ke kategori masuknya (bila kategori tersedia).
+            if (
+              !hasCompletedRegularDay &&
+              direction === "keluar" &&
+              masukRegularKategori &&
+              String(type.kategori_absen || "").trim() !== masukRegularKategori
+            ) {
+              return false;
+            }
+
+            return true;
           })
           .sort((a, b) => {
             const directionA = getAbsenDirection(a);
@@ -987,6 +1196,25 @@ const AbsenKaryawan = () => {
 
     if (!selectedAbsenType || !selectedTypeDetail) {
       Swal.fire("Error", "Wajib pilih tipe absen yang valid.", "error");
+      return;
+    }
+
+    // Absen masuk hanya boleh mulai 1 jam sebelum jam masuk. Berlaku untuk:
+    // - Regular jalur jadwal harian (usesJadwalHarian, non-lembur).
+    // - LEMBUR masuk (semua) — gantikan filter window lama, batasi attempt shift
+    //   komplemen sesuai jamnya.
+    // Cegah di FE supaya user tak upload foto sia-sia; guard BE sumber kebenaran.
+    const applyEarlyCheck =
+      (usesJadwalHarian && !effectiveLemburMode) || effectiveLemburMode;
+    const earlyMasuk = applyEarlyCheck
+      ? checkEarlyMasuk(selectedTypeDetail, new Date())
+      : { blocked: false };
+    if (earlyMasuk.blocked) {
+      Swal.fire(
+        "Belum waktunya absen",
+        `Absen masuk baru dibuka 1 jam sebelum jam masuk (${earlyMasuk.startAt}). Silakan absen mulai pukul ${earlyMasuk.openAt}.`,
+        "warning"
+      );
       return;
     }
 
@@ -1262,6 +1490,31 @@ const AbsenKaryawan = () => {
         </button>
       </div>
 
+      <div
+        style={{
+          background: "#2c3e50",
+          color: "#fff",
+          borderRadius: "12px",
+          padding: "14px",
+          marginBottom: "20px",
+          textAlign: "center",
+        }}
+      >
+        <p style={{ margin: 0, fontSize: "13px", opacity: 0.85 }}>
+          {format(now, "EEEE, dd MMMM yyyy", { locale: localeId })}
+        </p>
+        <p
+          style={{
+            margin: "4px 0 0",
+            fontSize: "28px",
+            fontWeight: "bold",
+            letterSpacing: "1px",
+          }}
+        >
+          {format(now, "HH:mm:ss", { locale: localeId })}
+        </p>
+      </div>
+
       {userProfile && (
         <div
           style={{
@@ -1292,13 +1545,13 @@ const AbsenKaryawan = () => {
         }}
       >
         {["masuk", "keluar"].map((direction) => {
-          const item = todayAttendanceStatus[direction];
+          // Card menyesuaikan mode aktif: mode lembur → status LEMBUR; else regular.
+          const item = effectiveLemburMode
+            ? todayLemburStatus[direction]
+            : todayAttendanceStatus[direction];
           const statusLabel = getAttendanceStatusLabel(item);
           const isRejected = item && isRejectedAttendance(item);
           const isPending = statusLabel === "Menunggu approval";
-          const hasOvertime = todayOvertimeItems.some(
-            (overtimeItem) => getAbsenDirection(overtimeItem) === direction
-          );
           const statusColor = !item
             ? "#c0392b"
             : isRejected
@@ -1306,6 +1559,14 @@ const AbsenKaryawan = () => {
               : isPending
                 ? "#f39c12"
                 : "#27ae60";
+
+          // Header: mode lembur → "Status Lembur"; cross-date aktif → nama tipe;
+          // else "Status Hari Ini".
+          const headerLabel = effectiveLemburMode
+            ? "Status Lembur"
+            : item && isCrossDateSesiActive(item)
+              ? String(item.category_absen || "").trim() || "Shift Lintas Hari"
+              : "Status Hari Ini";
 
           return (
             <div
@@ -1318,7 +1579,7 @@ const AbsenKaryawan = () => {
               }}
             >
               <p style={{ margin: "0 0 6px", fontSize: "13px", color: "#555" }}>
-                Status Hari Ini
+                {headerLabel}
               </p>
               <p style={{ margin: "0 0 8px", fontWeight: "bold", color: "#2c3e50" }}>
                 {absenDirectionLabels[direction]}
@@ -1338,12 +1599,14 @@ const AbsenKaryawan = () => {
               </span>
               {item?.absen_time && (
                 <p style={{ margin: "8px 0 0", fontSize: "12px", color: "#555" }}>
-                  {format(new Date(item.absen_time), "HH:mm", { locale: localeId })}
+                  {format(new Date(item.absen_time), "dd MMM yyyy, HH:mm", { locale: localeId })}
                 </p>
               )}
-              {hasOvertime && (
+              {/* Info kecil: ada absen lembur hari ini. Tampil di card regular
+                  (bukan mode lembur), sekali saja (card masuk). */}
+              {!effectiveLemburMode && direction === "masuk" && hasLemburToday && (
                 <p style={{ margin: "6px 0 0", fontSize: "12px", color: "#d35400", fontWeight: "bold" }}>
-                  Ada data lembur
+                  Ada absen lembur hari ini
                 </p>
               )}
             </div>
@@ -1378,7 +1641,10 @@ const AbsenKaryawan = () => {
         );
       })()}
 
-      {hasAvailableLemburTypes && !effectiveLemburMode && todayHasRegular && attendanceMode !== "lembur" && (
+      {/* Staff jadwal-harian boleh lembur (gantikan shift lain) kapan saja KECUALI
+          saat sedang menjalani shift regular (regularInProgress). Non-jadwal tetap
+          wajib regular komplit dulu — jaga fix Aminnudin (button hidden mid-shift). */}
+      {hasAvailableLemburTypes && !effectiveLemburMode && (usesJadwalHarian ? !regularInProgress : hasCompletedRegularAttendance) && attendanceMode !== "lembur" && (
         <button
           onClick={() => {
             setIsLemburMode(true);

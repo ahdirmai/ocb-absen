@@ -70,6 +70,9 @@ const assignJadwal = (rows) => {
 
 // Karyawan yang terhubung ke sebuah retail lewat shifting + shift_employes.
 // shifting.retail_id bisa CSV ("13,4,2") -> pakai FIND_IN_SET.
+// HANYA yang shift jadwal-harian AKTIF: uses_jadwal_harian=1 + periode shift
+// mencakup hari ini (start <= CURDATE() <= end). Selaras userUsesJadwalHarian —
+// user tanpa shift jadwal-harian aktif tak masuk matrix (tak bisa dijadwal).
 const getEmployeesByRetail = (retailId) => {
   const SQLQuery = `
     SELECT DISTINCT u.user_id, u.name, u.username
@@ -78,6 +81,9 @@ const getEmployeesByRetail = (retailId) => {
     JOIN user u ON u.user_id = se.user_id AND u.is_deleted = 0
     WHERE se.user_id <> 0
       AND FIND_IN_SET(?, REPLACE(s.retail_id, ' ', ''))
+      AND s.uses_jadwal_harian = 1
+      AND s.start_date <= CURDATE()
+      AND s.end_date >= CURDATE()
     ORDER BY u.name ASC`;
   return dbpool.query(SQLQuery, [retailId]);
 };
@@ -180,9 +186,29 @@ const setJadwalByDate = async (retailId, tanggal, rows, meta) => {
   }
 };
 
+// Retail yang punya shift jadwal-harian AKTIF hari ini (uses_jadwal_harian=1 +
+// periode mencakup CURDATE()). shifting.retail_id bisa CSV ("13,4,2") -> expand
+// via join retail + FIND_IN_SET. Dipakai FE filter dropdown OC: hanya OC yang
+// jadwal-hariannya aktif yang bisa dipilih.
+const getActiveJadwalRetails = () => {
+  const SQLQuery = `
+    SELECT DISTINCT r.retail_id, r.name
+    FROM shifting s
+    JOIN retail r
+      ON FIND_IN_SET(r.retail_id, REPLACE(s.retail_id, ' ', ''))
+     AND r.is_deleted = 0
+    WHERE s.is_deleted = 0
+      AND s.uses_jadwal_harian = 1
+      AND s.start_date <= CURDATE()
+      AND s.end_date >= CURDATE()
+    ORDER BY r.name ASC`;
+  return dbpool.query(SQLQuery);
+};
+
 module.exports = {
   SHIFT_SCHEDULED_CATEGORIES,
   getEligibleUsers,
+  getActiveJadwalRetails,
   getEmployeesByRetail,
   getJadwalByMonth,
   getKategoriShift,
