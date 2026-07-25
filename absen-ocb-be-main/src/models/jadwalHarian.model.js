@@ -205,10 +205,34 @@ const getActiveJadwalRetails = () => {
   return dbpool.query(SQLQuery);
 };
 
+// Semua OC dgn shift jadwal-harian AKTIF hari ini + karyawan aktifnya, satu query.
+// Dipakai template import: prefill baris user dikelompok per OC. Gabungan logika
+// getActiveJadwalRetails (OC aktif) + getEmployeesByRetail (user per OC) via CSV
+// retail_id FIND_IN_SET. Return: retail_id, retail_name, user_id, user_name.
+const getActiveRetailEmployees = () => {
+  const SQLQuery = `
+    SELECT DISTINCT
+      r.retail_id, r.name AS retail_name,
+      u.user_id, u.name AS user_name
+    FROM shifting s
+    JOIN retail r
+      ON FIND_IN_SET(r.retail_id, REPLACE(s.retail_id, ' ', ''))
+     AND r.is_deleted = 0
+    JOIN shift_employes se ON se.shifting_id = s.shifting_id AND se.user_id <> 0
+    JOIN user u ON u.user_id = se.user_id AND u.is_deleted = 0
+    WHERE s.is_deleted = 0
+      AND s.uses_jadwal_harian = 1
+      AND s.start_date <= CURDATE()
+      AND s.end_date >= CURDATE()
+    ORDER BY r.name ASC, u.name ASC`;
+  return dbpool.query(SQLQuery);
+};
+
 module.exports = {
   SHIFT_SCHEDULED_CATEGORIES,
   getEligibleUsers,
   getActiveJadwalRetails,
+  getActiveRetailEmployees,
   getEmployeesByRetail,
   getJadwalByMonth,
   getKategoriShift,

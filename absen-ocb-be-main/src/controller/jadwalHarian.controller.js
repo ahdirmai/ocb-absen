@@ -1,7 +1,7 @@
 const moment = require("moment-timezone");
 const fs = require("fs");
 const path = require("path");
-const XLSX = require("xlsx");
+const ExcelJS = require("exceljs");
 const dbpool = require("../config/database");
 const jadwalHarianModel = require("../models/jadwalHarian.model");
 
@@ -12,6 +12,40 @@ const TEMP_DIR = path.resolve(__dirname, "../../public/laporan");
 if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
+
+// --- Helper matrix template/import ---
+// Layout kolom: 1=Id, 2=Nama, 3=OC, 4=retail_id(hidden), 5..=hari 1..N.
+const COL_ID = 1;
+const COL_NAMA = 2;
+const COL_OC = 3;
+const COL_RETAIL_ID = 4;
+const COL_DAY_START = 5; // hari ke-1 di kolom E
+const HEADER_ROW = 2; // baris header (row 1 = meta bulan)
+
+// Hanya OC 1..40 (selaras filter FE JadwalHarian.jsx).
+const OC_RE = /^OC\s*0*(\d{1,2})$/i;
+const isOcRetail = (name) => {
+  const m = String(name).trim().match(OC_RE);
+  if (!m) return false;
+  const n = Number(m[1]);
+  return n >= 1 && n <= 40;
+};
+const ocNumber = (name) => {
+  const m = String(name).trim().match(OC_RE);
+  return m ? Number(m[1]) : 9999;
+};
+
+// exceljs cell.value bisa string / number / objek (richText/formula). Ambil teks polos.
+const cellText = (v) => {
+  if (v == null) return "";
+  if (typeof v === "object") {
+    if (Array.isArray(v.richText)) return v.richText.map((t) => t.text).join("");
+    if (v.text != null) return String(v.text);
+    if (v.result != null) return String(v.result);
+    return "";
+  }
+  return String(v);
+};
 
 const getEligibleUsers = async (_req, res) => {
   try {
@@ -330,47 +364,161 @@ const setByDate = async (req, res) => {
   }
 };
 
-// Download template Excel jadwal-harian. Sheet 1: header + baris contoh.
-// Sheet 2: referensi daftar tipe_absen (admin tahu id yg valid).
-const getImportTemplate = async (_req, res) => {
+// Label shift untuk dropdown & mapping import. Format: "S1 PAGI (Pagi)".
+// Encode ke absen_masuk_id/absen_keluar_id via map label->pair.
+const shiftLabel = (k) => `${k.shift_name} (${k.kategori_absen})`;
+
+// Download template Excel jadwal-harian (MATRIX, per bulan).
+// Baris = karyawan OC aktif (dikelompok per OC dgn baris judul), kolom = Id, Nama,
+// OC, retail_id(hidden), lalu 1..N tanggal bulan tsb. Tiap sel tanggal punya
+// dropdown (data validation) berisi semua shift OC + prefill jadwal existing.
+// ?month=YYYY-MM (default bulan berjalan).
+const getImportTemplate = async (req, res) => {
   try {
-    const wb = XLSX.utils.book_new();
+    const month =
+      req.query.month && /^\d{4}-\d{2}$/.test(req.query.month)
+        ? req.query.month
+        : moment().tz(timezone).format("YYYY-MM");
 
-    // Sheet 1: template
-    const header = [
-      "user_id",
-      "tanggal",
-      "absen_masuk_id",
-      "absen_keluar_id",
-      "retail_id",
-    ];
-    const example = [
-      {
-        user_id: 123,
-        tanggal: "2026-07-25",
-        absen_masuk_id: 9,
-        absen_keluar_id: 11,
-        retail_id: 4,
-      },
-    ];
-    const sheet1 = XLSX.utils.json_to_sheet(example, { header });
-    XLSX.utils.book_append_sheet(wb, sheet1, "Jadwal Harian");
+    const monthStart = moment.tz(`${month}-01`, "YYYY-MM-DD", timezone);
+    const daysInMonth = monthStart.daysInMonth();
 
-    // Sheet 2: referensi tipe_absen
-    const [tipe] = await dbpool.query(
-      `SELECT absen_id, name, description, kategori_absen
-       FROM tipe_absen WHERE is_deleted = 0 ORDER BY name ASC`
+    // Data: OC aktif + karyawan, shift options, jadwal existing bulan tsb.
+    const [[rows], [kategori], [existing]] = await Promise.all([
+      jadwalHarianModel.getActiveRetailEmployees(),
+      jadwalHarianModel.getKategoriShift(),
+      jadwalHarianModel.getJadwalByMonth(month, null),
+    ]);
+
+    const shiftOptions = (kategori || []).filter(
+      (k) => k.absen_masuk_id && k.absen_keluar_id
     );
-    const sheet2 = XLSX.utils.json_to_sheet(tipe);
-    XLSX.utils.book_append_sheet(wb, sheet2, "Referensi Tipe Absen");
+    // Map absen_masuk_id -> label (untuk prefill existing dari jadwal).
+    const masukIdToLabel = new Map(
+      shiftOptions.map((k) => [Number(k.absen_masuk_id), shiftLabel(k)])
+    );
+    // Map "user_id|tanggal" -> label shift existing.
+    const existingMap = new Map();
+    for (const r of existing || []) {
+      const lbl = masukIdToLabel.get(Number(r.absen_masuk_id));
+      if (lbl) existingMap.set(`${r.user_id}|${r.tanggal}`, lbl);
+    }
 
-    const filename = `template-jadwal-harian-${moment()
+    // Filter OC 1..40 + group per retail.
+    const byRetail = new Map();
+    for (const r of rows || []) {
+      if (!isOcRetail(r.retail_name)) continue;
+      if (!byRetail.has(r.retail_id)) {
+        byRetail.set(r.retail_id, {
+          retail_id: r.retail_id,
+          retail_name: r.retail_name,
+          users: [],
+        });
+      }
+      byRetail.get(r.retail_id).users.push({
+        user_id: r.user_id,
+        user_name: r.user_name,
+      });
+    }
+    const ocGroups = [...byRetail.values()].sort(
+      (a, b) => ocNumber(a.retail_name) - ocNumber(b.retail_name)
+    );
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Jadwal Harian");
+
+    // Sheet referensi shift (dropdown source + panduan).
+    const refWs = wb.addWorksheet("Referensi Shift");
+    refWs.columns = [
+      { header: "Pilihan Shift (untuk dropdown)", key: "label", width: 34 },
+      { header: "Kategori", key: "kat", width: 12 },
+    ];
+    shiftOptions.forEach((k) =>
+      refWs.addRow({ label: shiftLabel(k), kat: k.kategori_absen })
+    );
+    const optCount = shiftOptions.length;
+
+    // Baris 1: judul bulan. Baris 2 (HEADER_ROW): header kolom.
+    ws.mergeCells(1, COL_ID, 1, COL_DAY_START + daysInMonth - 1);
+    ws.getCell(1, COL_ID).value = `Jadwal Harian — ${monthStart.format(
+      "MMMM YYYY"
+    )} (pilih shift via dropdown di tiap sel tanggal)`;
+    ws.getCell(1, COL_ID).font = { bold: true, size: 12 };
+
+    const headerCells = ["Id", "Nama", "OC", "retail_id"];
+    headerCells.forEach((h, i) => {
+      const c = ws.getCell(HEADER_ROW, COL_ID + i);
+      c.value = h;
+      c.font = { bold: true };
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE9ECEF" } };
+    });
+    for (let d = 1; d <= daysInMonth; d++) {
+      const c = ws.getCell(HEADER_ROW, COL_DAY_START + d - 1);
+      c.value = d;
+      c.font = { bold: true };
+      c.alignment = { horizontal: "center" };
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE9ECEF" } };
+    }
+
+    ws.getColumn(COL_ID).width = 8;
+    ws.getColumn(COL_NAMA).width = 26;
+    ws.getColumn(COL_OC).width = 10;
+    ws.getColumn(COL_RETAIL_ID).hidden = true;
+    for (let d = 1; d <= daysInMonth; d++) {
+      ws.getColumn(COL_DAY_START + d - 1).width = 16;
+    }
+
+    // Dropdown formula: referensi rentang sheet Referensi Shift.
+    const dvFormula =
+      optCount > 0
+        ? [`'Referensi Shift'!$A$2:$A$${optCount + 1}`]
+        : null;
+
+    let rowIdx = HEADER_ROW + 1;
+    for (const g of ocGroups) {
+      // Baris judul OC (merge lebar).
+      ws.mergeCells(rowIdx, COL_ID, rowIdx, COL_DAY_START + daysInMonth - 1);
+      const gc = ws.getCell(rowIdx, COL_ID);
+      gc.value = g.retail_name;
+      gc.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      gc.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0D6EFD" } };
+      rowIdx++;
+
+      for (const u of g.users) {
+        ws.getCell(rowIdx, COL_ID).value = u.user_id;
+        ws.getCell(rowIdx, COL_NAMA).value = u.user_name;
+        ws.getCell(rowIdx, COL_OC).value = g.retail_name;
+        ws.getCell(rowIdx, COL_RETAIL_ID).value = g.retail_id;
+
+        for (let d = 1; d <= daysInMonth; d++) {
+          const tanggal = monthStart.clone().date(d).format("YYYY-MM-DD");
+          const cell = ws.getCell(rowIdx, COL_DAY_START + d - 1);
+          const pre = existingMap.get(`${u.user_id}|${tanggal}`);
+          if (pre) cell.value = pre;
+          if (dvFormula) {
+            cell.dataValidation = {
+              type: "list",
+              allowBlank: true,
+              formulae: dvFormula,
+              showErrorMessage: true,
+              errorTitle: "Shift tidak valid",
+              error: "Pilih shift dari dropdown.",
+            };
+          }
+        }
+        rowIdx++;
+      }
+    }
+
+    ws.views = [{ state: "frozen", xSplit: COL_OC, ySplit: HEADER_ROW }];
+
+    const filename = `template-jadwal-harian-${month}-${moment()
       .tz(timezone)
       .format("YYYYMMDD_HHmmss")}.xlsx`;
     const outPath = path.join(TEMP_DIR, filename);
-    XLSX.writeFile(wb, outPath);
+    await wb.xlsx.writeFile(outPath);
 
-    res.download(outPath, "template-jadwal-harian.xlsx", () => {
+    res.download(outPath, `template-jadwal-harian-${month}.xlsx`, () => {
       fs.unlink(outPath, () => {});
     });
   } catch (error) {
@@ -383,8 +531,10 @@ const getImportTemplate = async (_req, res) => {
   }
 };
 
-// Import Excel jadwal-harian. Upload file → parse → validasi → group per
-// retail_id+tanggal → panggil setJadwalByDate per group. Partial success.
+// Import Excel jadwal-harian (MATRIX). Parse baris user (Id/Nama/OC/retail_id +
+// kolom tanggal berlabel angka hari di HEADER_ROW). Tiap sel berisi label shift
+// ("S1 PAGI (Pagi)") -> map ke absen_masuk_id/absen_keluar_id. Upsert non-destruktif
+// via assignJadwal (sel kosong = tak diubah, TIDAK menghapus jadwal existing).
 const importJadwal = async (req, res) => {
   if (!req.file) {
     return res.status(400).json({
@@ -396,154 +546,158 @@ const importJadwal = async (req, res) => {
 
   const filePath = req.file.path;
   const errors = [];
-  const groupsInserted = [];
   let inserted = 0;
   let skipped = 0;
+  let totalCells = 0;
 
   try {
-    const wb = XLSX.readFile(filePath);
-    const sheetName = wb.SheetNames[0];
-    const sheet = wb.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: null });
-
-    if (rows.length === 0) {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.readFile(filePath);
+    const ws = wb.getWorksheet("Jadwal Harian") || wb.worksheets[0];
+    if (!ws) {
       return res.status(400).json({
-        message: "Sheet kosong.",
-        status: "failed",
-        status_code: "400",
-      });
-    }
-    if (rows.length > MAX_IMPORT_ROWS) {
-      return res.status(400).json({
-        message: `Maksimum ${MAX_IMPORT_ROWS} baris. File punya ${rows.length}.`,
+        message: "Sheet 'Jadwal Harian' tidak ditemukan.",
         status: "failed",
         status_code: "400",
       });
     }
 
-    // Validasi header
-    const required = ["user_id", "tanggal", "absen_masuk_id", "absen_keluar_id"];
-    const sample = rows[0];
-    const sampleKeys = Object.keys(sample).map((k) => k.toLowerCase().trim());
-    const missing = required.filter((r) => !sampleKeys.includes(r));
-    if (missing.length > 0) {
-      return res.status(400).json({
-        message: `Header wajib hilang: ${missing.join(", ")}. Download template untuk format benar.`,
-        status: "failed",
-        status_code: "400",
+    // Peta label shift -> {masuk_id, keluar_id}. Normalisasi lower+trim.
+    const [kategori] = await jadwalHarianModel.getKategoriShift();
+    const labelToShift = new Map();
+    for (const k of kategori || []) {
+      if (!k.absen_masuk_id || !k.absen_keluar_id) continue;
+      labelToShift.set(shiftLabel(k).toLowerCase().trim(), {
+        absen_masuk_id: Number(k.absen_masuk_id),
+        absen_keluar_id: Number(k.absen_keluar_id),
+      });
+      // Terima juga hanya nama shift tanpa "(kategori)".
+      labelToShift.set(String(k.shift_name).toLowerCase().trim(), {
+        absen_masuk_id: Number(k.absen_masuk_id),
+        absen_keluar_id: Number(k.absen_keluar_id),
       });
     }
 
-    // Normalisasi keys (case-insensitive)
-    const norm = (r) => {
-      const out = {};
-      for (const k of Object.keys(r)) {
-        out[k.toLowerCase().trim()] = r[k];
+    // Baca header: kolom tanggal (COL_DAY_START..) berisi angka hari.
+    const headerRow = ws.getRow(HEADER_ROW);
+    const dayColMap = []; // [{col, day}]
+    headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+      if (colNumber < COL_DAY_START) return;
+      const day = Number(cellText(cell.value).trim());
+      if (Number.isInteger(day) && day >= 1 && day <= 31) {
+        dayColMap.push({ col: colNumber, day });
       }
-      return out;
-    };
-    const normalized = rows.map(norm);
-
-    // Pre-fetch validasi: bulk query untuk user, tipe_absen, retail
-    const userIds = [...new Set(normalized.map((r) => Number(r.user_id)).filter(Boolean))];
-    const tipeIds = [
-      ...new Set(
-        normalized
-          .flatMap((r) => [Number(r.absen_masuk_id), Number(r.absen_keluar_id)])
-          .filter(Boolean)
-      ),
-    ];
-    const retailIds = [
-      ...new Set(normalized.map((r) => Number(r.retail_id)).filter(Boolean)),
-    ];
-
-    const [validUsers] = userIds.length
-      ? await dbpool.query(`SELECT user_id FROM user WHERE is_deleted = 0 AND user_id IN (?)`, [userIds])
-      : [[]];
-    const [validTipe] = tipeIds.length
-      ? await dbpool.query(`SELECT absen_id FROM tipe_absen WHERE is_deleted = 0 AND absen_id IN (?)`, [tipeIds])
-      : [[]];
-    const [validRetail] = retailIds.length
-      ? await dbpool.query(`SELECT retail_id FROM retail WHERE is_deleted = 0 AND retail_id IN (?)`, [retailIds])
-      : [[]];
-
-    const userSet = new Set(validUsers.map((r) => Number(r.user_id)));
-    const tipeSet = new Set(validTipe.map((r) => Number(r.absen_id)));
-    const retailSet = new Set(validRetail.map((r) => Number(r.retail_id)));
-
-    // Validasi per row
-    const validRows = [];
-    normalized.forEach((r, idx) => {
-      const rowNumber = idx + 2; // +2 karena header di row 1
-      const userId = Number(r.user_id);
-      const masukId = Number(r.absen_masuk_id);
-      const keluarId = Number(r.absen_keluar_id);
-      const retailId = Number(r.retail_id);
-      const tanggal = String(r.tanggal || "").trim();
-
-      if (!userId || !masukId || !keluarId || !tanggal || !retailId) {
-        errors.push({ row: rowNumber, error: "Field wajib kosong." });
-        skipped++;
-        return;
-      }
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(tanggal)) {
-        errors.push({ row: rowNumber, error: `Format tanggal salah: ${tanggal}` });
-        skipped++;
-        return;
-      }
-      if (!userSet.has(userId)) {
-        errors.push({ row: rowNumber, error: `user_id ${userId} tidak ditemukan.` });
-        skipped++;
-        return;
-      }
-      if (!tipeSet.has(masukId) || !tipeSet.has(keluarId)) {
-        errors.push({ row: rowNumber, error: `absen_type_id tidak valid (masuk=${masukId}, keluar=${keluarId}).` });
-        skipped++;
-        return;
-      }
-      if (!retailSet.has(retailId)) {
-        errors.push({ row: rowNumber, error: `retail_id ${retailId} tidak ditemukan.` });
-        skipped++;
-        return;
-      }
-      validRows.push({ user_id: userId, tanggal, absen_masuk_id: masukId, absen_keluar_id: keluarId, retail_id: retailId });
     });
-
-    // Group by retail_id + tanggal
-    const groupMap = new Map();
-    for (const r of validRows) {
-      const key = `${r.retail_id}|${r.tanggal}`;
-      if (!groupMap.has(key)) {
-        groupMap.set(key, { retail_id: r.retail_id, tanggal: r.tanggal, assignments: [] });
-      }
-      groupMap.get(key).assignments.push({
-        user_id: r.user_id,
-        absen_masuk_id: r.absen_masuk_id,
-        absen_keluar_id: r.absen_keluar_id,
+    if (dayColMap.length === 0) {
+      return res.status(400).json({
+        message:
+          "Header kolom tanggal tidak ditemukan. Gunakan template terbaru (Download Template).",
+        status: "failed",
+        status_code: "400",
       });
     }
 
-    // Insert per group via setJadwalByDate existing
-    const meta = {
-      at: moment().tz(timezone).format("YYYY-MM-DD HH:mm:ss"),
-      by: req.user?.id ? String(req.user.id) : null,
-    };
-    for (const g of groupMap.values()) {
-      try {
-        await jadwalHarianModel.setJadwalByDate(
-          g.retail_id,
-          g.tanggal,
-          g.assignments,
-          meta
-        );
-        inserted += g.assignments.length;
-        groupsInserted.push({ retail_id: g.retail_id, tanggal: g.tanggal, count: g.assignments.length });
-      } catch (e) {
-        errors.push({
-          row: 0,
-          error: `Group retail=${g.retail_id} tanggal=${g.tanggal}: ${e.message || e}`,
+    // Tentukan bulan/tahun dari judul baris 1 (mis. "... — July 2026 ...").
+    const titleText = cellText(ws.getRow(1).getCell(COL_ID).value);
+    const mTitle = moment(
+      titleText.replace(/^.*—\s*/, "").replace(/\s*\(.*$/, "").trim(),
+      "MMMM YYYY"
+    );
+    const monthYear = mTitle.isValid()
+      ? mTitle
+      : moment().tz(timezone); // fallback bulan berjalan
+
+    // Kumpulkan baris valid.
+    const collected = []; // {user_id, retail_id, tanggal, absen_masuk_id, absen_keluar_id}
+    const userIds = new Set();
+    const retailIds = new Set();
+
+    const lastRow = ws.rowCount;
+    for (let r = HEADER_ROW + 1; r <= lastRow; r++) {
+      const row = ws.getRow(r);
+      const userId = Number(cellText(row.getCell(COL_ID).value).trim());
+      const retailId = Number(cellText(row.getCell(COL_RETAIL_ID).value).trim());
+      // Baris judul OC / kosong: tak ada user_id numerik -> lewati diam.
+      if (!userId || !retailId) continue;
+      userIds.add(userId);
+      retailIds.add(retailId);
+
+      for (const { col, day } of dayColMap) {
+        const raw = cellText(row.getCell(col).value).trim();
+        if (!raw) continue; // sel kosong = tak diubah
+        totalCells++;
+        const shift = labelToShift.get(raw.toLowerCase());
+        if (!shift) {
+          errors.push({
+            row: r,
+            error: `Shift "${raw}" tidak dikenal (baris user ${userId}, hari ${day}).`,
+          });
+          skipped++;
+          continue;
+        }
+        const tanggal = monthYear.clone().date(day).format("YYYY-MM-DD");
+        collected.push({
+          user_id: userId,
+          retail_id: retailId,
+          tanggal,
+          absen_masuk_id: shift.absen_masuk_id,
+          absen_keluar_id: shift.absen_keluar_id,
         });
       }
+    }
+
+    if (totalCells > MAX_IMPORT_ROWS) {
+      return res.status(400).json({
+        message: `Maksimum ${MAX_IMPORT_ROWS} sel terisi. File punya ${totalCells}.`,
+        status: "failed",
+        status_code: "400",
+      });
+    }
+
+    // Validasi user & retail exist (bulk).
+    const [validUsers] = userIds.size
+      ? await dbpool.query(
+          `SELECT user_id FROM user WHERE is_deleted = 0 AND user_id IN (?)`,
+          [[...userIds]]
+        )
+      : [[]];
+    const [validRetail] = retailIds.size
+      ? await dbpool.query(
+          `SELECT retail_id FROM retail WHERE is_deleted = 0 AND retail_id IN (?)`,
+          [[...retailIds]]
+        )
+      : [[]];
+    const userSet = new Set(validUsers.map((x) => Number(x.user_id)));
+    const retailSet = new Set(validRetail.map((x) => Number(x.retail_id)));
+
+    const now = moment().tz(timezone).format("YYYY-MM-DD HH:mm:ss");
+    const createdBy = req.user?.id ? String(req.user.id) : null;
+    const upsertRows = [];
+    for (const c of collected) {
+      if (!userSet.has(c.user_id)) {
+        errors.push({ row: 0, error: `user_id ${c.user_id} tidak ditemukan.` });
+        skipped++;
+        continue;
+      }
+      if (!retailSet.has(c.retail_id)) {
+        errors.push({ row: 0, error: `retail_id ${c.retail_id} tidak ditemukan.` });
+        skipped++;
+        continue;
+      }
+      upsertRows.push({
+        user_id: c.user_id,
+        tanggal: c.tanggal,
+        retail_id: c.retail_id,
+        absen_masuk_id: c.absen_masuk_id,
+        absen_keluar_id: c.absen_keluar_id,
+        created_at: now,
+        created_by: createdBy,
+      });
+    }
+
+    if (upsertRows.length > 0) {
+      await jadwalHarianModel.assignJadwal(upsertRows);
+      inserted = upsertRows.length;
     }
 
     res.json({
@@ -551,10 +705,10 @@ const importJadwal = async (req, res) => {
       status: "success",
       status_code: "200",
       data: {
-        total_rows: rows.length,
+        total_rows: totalCells,
         inserted,
         skipped,
-        groups: groupsInserted.length,
+        groups: 0,
         errors,
       },
     });

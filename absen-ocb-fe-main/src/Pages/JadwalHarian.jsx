@@ -252,15 +252,18 @@ const JadwalHarian = () => {
   // --- Import Excel handlers ---
   const handleDownloadTemplate = async () => {
     try {
-      const res = await fetch(`${VITE_API_URL}/jadwal-harian/import-template`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-      });
+      const res = await fetch(
+        `${VITE_API_URL}/jadwal-harian/import-template?month=${monthStr}`,
+        {
+          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+        }
+      );
       if (!res.ok) throw new Error("Gagal download template.");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "template-jadwal-harian.xlsx";
+      a.download = `template-jadwal-harian-${monthStr}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -565,21 +568,21 @@ const JadwalHarian = () => {
         </Modal.Header>
         <Modal.Body>
           <p className="text-muted mb-3">
-            Upload file .xlsx/.xls dengan format template. Download template terlebih dahulu jika belum punya.
+            Upload file .xlsx hasil <strong>Download Template</strong> ({format(monthDate, "MMMM yyyy")}).
+            Isi shift lewat dropdown di tiap sel tanggal. Sel kosong dilewati (jadwal lama tak terhapus).
           </p>
           <input
             type="file"
-            accept=".xlsx,.xls"
+            accept=".xlsx"
             className="form-control mb-3"
             onChange={(e) => setImportFile(e.target.files[0] || null)}
           />
           {importing && <p className="text-info">Mengimport...</p>}
           {importResult && (
             <div className={`alert ${importResult.errors?.length > 0 ? "alert-warning" : "alert-success"}`}>
-              <p className="mb-1"><strong>Total baris:</strong> {importResult.total_rows}</p>
-              <p className="mb-1"><strong>Berhasil insert:</strong> {importResult.inserted}</p>
+              <p className="mb-1"><strong>Sel terisi:</strong> {importResult.total_rows}</p>
+              <p className="mb-1"><strong>Berhasil simpan:</strong> {importResult.inserted}</p>
               <p className="mb-1"><strong>Dilewati (error):</strong> {importResult.skipped}</p>
-              {importResult.groups > 0 && <p className="mb-1"><strong>Grup (retail+bulan):</strong> {importResult.groups}</p>}
               {importResult.errors?.length > 0 && (
                 <details className="mt-2">
                   <summary>Detail error ({importResult.errors.length})</summary>
