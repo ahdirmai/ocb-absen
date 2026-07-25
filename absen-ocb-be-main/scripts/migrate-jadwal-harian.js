@@ -5,13 +5,15 @@ const dbpool = require("../src/config/database");
 
 (async () => {
   try {
-    // 1. Buat tabel jadwal_harian
+    // 1. Drop + buat ulang tabel jadwal_harian (FK schema baru)
+    await dbpool.query("DROP TABLE IF EXISTS jadwal_harian");
+    console.log("[ok] tabel jadwal_harian di-drop");
     const ddl = fs.readFileSync(
       path.resolve(__dirname, "../docs/jadwal-harian.sql"),
       "utf8"
     );
     await dbpool.query(ddl);
-    console.log("[ok] tabel jadwal_harian dibuat / sudah ada");
+    console.log("[ok] tabel jadwal_harian dibuat (dengan FK absen_masuk_id + absen_keluar_id)");
 
     // 2. Menu sidebar: navigation_links (idempotent by path)
     const menuPath = "/jadwal-harian";
@@ -54,6 +56,19 @@ const dbpool = require("../src/config/database");
         [catId, menuId, "migration"]
       );
       console.log(`[ok] grant kategori ${catId} -> menu ${menuId}`);
+    }
+
+    // 4. Tambah kolom is_lembur di tabel absensi (idempotent)
+    const [lemburCol] = await dbpool.query(
+      "SHOW COLUMNS FROM absensi LIKE 'is_lembur'"
+    );
+    if (lemburCol.length === 0) {
+      await dbpool.query(
+        "ALTER TABLE absensi ADD COLUMN is_lembur TINYINT(1) NOT NULL DEFAULT 0 AFTER is_valid"
+      );
+      console.log("[ok] kolom is_lembur ditambah ke tabel absensi");
+    } else {
+      console.log("[skip] kolom is_lembur sudah ada di tabel absensi");
     }
 
     console.log("Migrasi selesai.");

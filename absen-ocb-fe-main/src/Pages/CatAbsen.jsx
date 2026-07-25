@@ -23,6 +23,7 @@ const CatAbsen = () => {
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
+  const [addLoading, setAddLoading] = useState(false);
   const [selectedCatabsen, setSelectedCatabsen] = useState({});
   const [modalVisible, setModalVisible] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false); // Modal untuk tambah user baru
@@ -91,7 +92,6 @@ const CatAbsen = () => {
         });
 
         const formattedData = formatAbsenData(response.data.data);
-        console.log(formattedData);
 
         setcatabsen(formattedData);
         setError(null);
@@ -164,6 +164,31 @@ const CatAbsen = () => {
   }, [selectedCatabsen?.group_absen, selectedCatabsen?.kategori_absen]);
 
   const handleAddCatAbsen = async () => {
+    if (addLoading) {
+      return;
+    }
+
+    // Validasi pra-submit: field wajib.
+    const name = String(newCatabsen.name || "").trim();
+    const description = String(newCatabsen.description || "").trim();
+    const feeRaw = String(newCatabsen.fee ?? "").trim();
+
+    if (!name || !description || feeRaw === "") {
+      Swal.fire("Validasi", "Nama, deskripsi, dan fee wajib diisi.", "warning");
+      return;
+    }
+
+    if (name.length < 2) {
+      Swal.fire("Validasi", "Nama tipe absen minimal 2 karakter.", "warning");
+      return;
+    }
+
+    if (Number.isNaN(Number(feeRaw)) || Number(feeRaw) < 0) {
+      Swal.fire("Validasi", "Fee harus berupa angka >= 0.", "warning");
+      return;
+    }
+
+    setAddLoading(true);
     try {
       const token = localStorage.getItem("token");
       const headers = { Authorization: `Bearer ${token}` };
@@ -228,6 +253,8 @@ const CatAbsen = () => {
         error.response?.data?.message || error.message,
         "error"
       );
+    } finally {
+      setAddLoading(false);
     }
   };
 
@@ -769,8 +796,9 @@ const CatAbsen = () => {
           <Button
             className="btn btn-gradient-primary me-2"
             onClick={handleAddCatAbsen}
+            disabled={addLoading}
           >
-            Tambah Tipe Absen
+            {addLoading ? "Menyimpan..." : "Tambah Tipe Absen"}
           </Button>
         </Modal.Footer>
       </Modal>

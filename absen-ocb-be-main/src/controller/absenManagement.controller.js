@@ -196,11 +196,21 @@ const getTypeAbsenPerShift = async(req, res) =>{
             isAbsenToday = 0;
         }
 
+        // Bedakan "belum di-assign jadwal" vs "ada tipe absen" untuk pesan FE.
+        const jadwalStatus = await absenManagementModel.getShiftJadwalStatus(userId);
+        const noJadwalAssigned =
+            jadwalStatus.isShiftScheduled &&
+            !jadwalStatus.hasJadwal &&
+            uniqueData.length === 0;
+
         res.json({
-            message: 'Get Detail Absen Type Shift Success',
+            message: noJadwalAssigned
+                ? 'Belum ada jadwal absen yang ditetapkan admin untuk Anda hari ini.'
+                : 'Get Detail Absen Type Shift Success',
             status : "success",
             status_code : "200",
             is_absen_today : isAbsenToday,
+            no_jadwal_assigned : noJadwalAssigned,
             data : uniqueData
         })
     }
@@ -211,7 +221,27 @@ const getTypeAbsenPerShift = async(req, res) =>{
             status_code : "500",
             serverMessage : error
         })
-    }  
+    }
+}
+
+const getLemburTypes = async(req, res) => {
+    const {userId} = req.params;
+    try {
+        const [data] = await absenManagementModel.getLemburTypes(userId);
+        res.json({
+            message: 'Get Lembur Types Success',
+            status: "success",
+            status_code: "200",
+            data
+        });
+    } catch(error) {
+        res.status(500).json({
+            message: "Internal Server Error",
+            status: "failed",
+            status_code: "500",
+            serverMessage: error
+        });
+    }
 }
 
 
@@ -328,6 +358,7 @@ module.exports ={
     createNewAbsenType,
     deleteTypeAbsen,
     getTypeAbsenPerShift,
+    getLemburTypes,
     getTypeAbsenWithGroups,
     updateAbsenType
 }

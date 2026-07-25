@@ -147,6 +147,39 @@ const Absensi = () => {
     });
   };
 
+  const handleIgnore = async (row) => {
+    Swal.fire({
+      title: "Ignore absen ini?",
+      text: `Absen ${row.nama_karyawan} akan diabaikan (ditolak) dan karyawan bisa absen ulang.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Ya, ignore",
+    }).then(async (result) => {
+      if (!result.isConfirmed) return;
+      try {
+        const token = localStorage.getItem("token");
+        const headers = { Authorization: `Bearer ${token}` };
+        const res = await axios.post(
+          `${VITE_API_URL}/absensi/reject-absensi/${row.absensi_id}`,
+          {},
+          { headers }
+        );
+        Swal.fire("Diabaikan!", `${res.data.message}`, "success");
+        setAbsensies((prev) =>
+          prev.map((item) =>
+            item.absensi_id === row.absensi_id
+              ? { ...item, is_valid: 0, status_approval: "rejected" }
+              : item
+          )
+        );
+      } catch (error) {
+        Swal.fire("Error!", error.response?.data?.message || error.message, "error");
+      }
+    });
+  };
+
   const columns = [
     {
       name: (
@@ -239,8 +272,19 @@ const Absensi = () => {
       ),
       
       
-      selector: (row) => row.description },
-    { 
+      selector: (row) => row.description,
+      cell: (row) => (
+        <span>
+          {row.description || "-"}
+          {(row.is_lembur === 1 || row.is_lembur === "1") && (
+            <span className="badge bg-warning text-dark" style={{ marginLeft: "6px", fontSize: "10px" }}>
+              Lembur
+            </span>
+          )}
+        </span>
+      ),
+    },
+    {
       name: (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
           <span style={{ marginBottom: "6px" }}>Fee</span>
@@ -375,6 +419,25 @@ const Absensi = () => {
         </button>
       ),
     },
+    {
+      name: (
+        <span style={{ marginBottom: "45px" }}>Ignore</span>
+      ),
+      cell: (row) =>
+        String(row.status_approval).toLowerCase().includes("tolak") ||
+        String(row.status_approval).toLowerCase().includes("reject") ||
+        String(row.status_approval) === "3" ? (
+          <span className="badge bg-secondary">Diabaikan</span>
+        ) : (
+          <button
+            className="btn btn-sm btn-gradient-warning"
+            onClick={() => handleIgnore(row)}
+            title="Abaikan absen, karyawan bisa absen ulang"
+          >
+            Ignore
+          </button>
+        ),
+    },
   ];
 
   useEffect(() => {
@@ -392,7 +455,8 @@ const Absensi = () => {
         "Waktu Absen": format(new Date(row.absen_time), "yyyy-MM-dd HH:mm:ss"),
         "Deskripsi Absen": row.description,
         "Fee": row.fee,
-        "Status": row.is_valid ? "Valid" : "Invalid" ,
+        "Status": row.is_valid ? "Valid" : "Invalid",
+        "Lembur": (row.is_lembur === 1 || row.is_lembur === "1") ? "Ya" : "Tidak",
       }));
   
       const worksheet = XLSX.utils.json_to_sheet(data);

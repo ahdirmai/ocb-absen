@@ -13,18 +13,18 @@ const getRetail = async(retailId) =>{
 }
 
 const updateRetail = async(body, retailId) =>{
-    const SQLQuery = `UPDATE retail 
-                        SET name ='${body.name}',latitude = '${body.latitude}',longitude = '${body.longitude}',radius = '${body.radius}', is_active = '${body.is_active}', updated_at ='${body.updated_at}',updated_by = '${body.updated_by}' 
-                        WHERE retail_id =${retailId}`;
-
-    return dbpool.execute(SQLQuery);
+    const SQLQuery = `UPDATE retail
+                        SET name = ?, latitude = ?, longitude = ?, radius = ?, is_active = ?, updated_at = ?, updated_by = ?
+                        WHERE retail_id = ?`;
+    const values = [body.name, body.latitude, body.longitude, body.radius, body.is_active, body.updated_at, body.updated_by, retailId];
+    return dbpool.execute(SQLQuery, values);
 }
 
 
 const createNewRetail = async(body)=>{
 
     const [result] = await dbpool.query(
-        'INSERT INTO retail (name, latitude, longitude, radius, is_active, created_at, created_by )VALUES (?,?,?,?,?,?,?)',
+        'INSERT INTO retail (name, latitude, longitude, radius, is_active, created_at, created_by) VALUES (?,?,?,?,?,?,?)',
         [body.name, body.latitude, body.longitude, body.radius, body.is_active, body.created_at, body.created_by]
     );
     return result;

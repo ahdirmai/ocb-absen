@@ -18,6 +18,8 @@ router.post('/delete/:absenId', authenticateToken, absenManagementController.del
 
 router.post('/shift-user/:userId', authenticateToken, absenManagementController.getTypeAbsenPerShift);
 
+router.get('/lembur-types/:userId', authenticateToken, absenManagementController.getLemburTypes);
+
 
 
 
