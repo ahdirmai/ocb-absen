@@ -415,6 +415,7 @@ module.exports = {
   deleteTypeAbsen,
   getTypeAbsenPerShift,
   getShiftJadwalStatus,
+  userUsesJadwalHarian,
   getLemburTypes,
   checkFlagAbsen,
   createNewGroupAbsen,

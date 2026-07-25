@@ -100,6 +100,7 @@ const createAbsensi = async (req, res) => {
     const selectedDesc = String(getTimeDB.description || "").toLowerCase();
     const isKeluar =
       selectedDesc.includes("keluar") || selectedDesc.includes("pulang");
+    const isMasuk = selectedDesc.includes("masuk");
 
     // Hard-guard lembur: lembur hanya boleh setelah shift regular hari ini komplit
     // (masuk + keluar). Lembur-keluar wajib didahului lembur-masuk.
@@ -251,6 +252,46 @@ const createAbsensi = async (req, res) => {
       .format("HH:mm:ss");
     const timeAbsenMomentFormatted = timeAbsenMoment.format("HH:mm:ss");
     const potonganLate = Number(getPotonganLate?.value || 0);
+
+    // Absen MASUK hanya boleh mulai 1 jam sebelum jam masuk (start_time).
+    // Ex: start_time 15:00 -> paling awal boleh absen 14:00. Sebelum itu ditolak.
+    // Telat (setelah start_time) tetap boleh (ditangani status_absen di bawah).
+    // Keluar/lembur & tipe non-masuk (kebersihan/parkir) tak kena guard ini.
+    // HANYA untuk user jalur jadwal harian (uses_jadwal_harian aktif) — user
+    // non-jadwal (retail biasa) tak dibatasi window early ini.
+    const usesJadwalHarian =
+      !body.is_lembur &&
+      (await absenManagementModel.userUsesJadwalHarian(body.user_id));
+
+    if (isMasuk && !isKeluar && usesJadwalHarian) {
+      const EARLY_MASUK_WINDOW_MINUTES = 60;
+      const toMinutes = (hhmmss) => {
+        const [h, m] = String(hhmmss).split(":").map((n) => parseInt(n, 10));
+        return h * 60 + m;
+      };
+      const nowMin = toMinutes(timeAbsenMomentFormatted);
+      const startMin = toMinutes(startTimeDBMoment);
+      // Selisih menit menuju start (positif = belum sampai jam masuk). Tangani
+      // wrap tengah malam: pilih jarak terpendek pada siklus 24 jam.
+      let minutesUntilStart = startMin - nowMin;
+      if (minutesUntilStart > 720) minutesUntilStart -= 1440;
+      if (minutesUntilStart < -720) minutesUntilStart += 1440;
+
+      if (minutesUntilStart > EARLY_MASUK_WINDOW_MINUTES) {
+        removeUploadedImage(file.filename);
+
+        return res.status(400).json({
+          message: `Absen masuk baru dibuka 1 jam sebelum jam masuk (${startTimeDBMoment.slice(
+            0,
+            5
+          )}). Silakan absen mulai pukul ${moment(startTimeDBMoment, "HH:mm:ss")
+            .subtract(EARLY_MASUK_WINDOW_MINUTES, "minutes")
+            .format("HH:mm")}.`,
+          status: "failed",
+          status_code: "400",
+        });
+      }
+    }
 
     if (timeAbsenMomentFormatted < startTimeDBMoment) {
       status_absen = 1;

@@ -49,6 +49,36 @@ const getAbsenDirection = (item) => {
   return "";
 };
 
+// Absen masuk baru dibuka 1 jam sebelum jam masuk (start_time). Selaras guard BE.
+const EARLY_MASUK_WINDOW_MINUTES = 60;
+
+// Cek apakah absen masuk masih terlalu awal (> 1 jam sebelum start_time).
+// Return { blocked, openAt } — openAt = "HH:mm" jam mulai boleh absen.
+// Telat (setelah start_time) tak diblok. Wrap tengah malam ditangani.
+const checkEarlyMasuk = (type, now = new Date()) => {
+  if (getAbsenDirection(type) !== "masuk") return { blocked: false };
+  const start = String(type?.start_time || "").trim();
+  if (!start) return { blocked: false };
+  const [sh, sm] = start.split(":").map((n) => parseInt(n, 10));
+  if (Number.isNaN(sh) || Number.isNaN(sm)) return { blocked: false };
+
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const startMin = sh * 60 + sm;
+  let minutesUntilStart = startMin - nowMin;
+  if (minutesUntilStart > 720) minutesUntilStart -= 1440;
+  if (minutesUntilStart < -720) minutesUntilStart += 1440;
+
+  const openMin = (startMin - EARLY_MASUK_WINDOW_MINUTES + 1440) % 1440;
+  const openAt = `${String(Math.floor(openMin / 60)).padStart(2, "0")}:${String(
+    openMin % 60
+  ).padStart(2, "0")}`;
+  return {
+    blocked: minutesUntilStart > EARLY_MASUK_WINDOW_MINUTES,
+    openAt,
+    startAt: `${String(sh).padStart(2, "0")}:${String(sm).padStart(2, "0")}`,
+  };
+};
+
 const isSameLocalDate = (dateValue, compareDate = new Date()) => {
   if (!dateValue) {
     return false;
@@ -317,6 +347,7 @@ const getAttendanceStatusLabel = (item) => {
 const AbsenKaryawan = () => {
   const [loading, setLoading] = useState(false);
   const [now, setNow] = useState(new Date());
+  const [usesJadwalHarian, setUsesJadwalHarian] = useState(false);
   const [location, setLocation] = useState(initialLocation);
   const [locationError, setLocationError] = useState("");
   const [photo, setPhoto] = useState(null);
@@ -380,13 +411,6 @@ const AbsenKaryawan = () => {
     [history]
   );
 
-  // Hari ini sudah ada absen regular (is_lembur=0, bukan rejected).
-  const todayHasRegular = useMemo(() => {
-    return history.some(
-      (item) => isSameLocalDate(item.absen_time) && !isRejectedAttendance(item) && item.is_lembur !== 1 && item.is_lembur !== "1"
-    );
-  }, [history]);
-
   // Ada absen pending (menunggu approval) hari ini → blokir attempt baru.
   const todayHasPending = useMemo(() => {
     return history.some((item) => {
@@ -404,9 +428,17 @@ const AbsenKaryawan = () => {
   }, [history]);
 
   // Lock mode: jika sudah ada absen hari ini → mode terkunci (lembur/regular).
+  // Exclude row cross-date bersesi 'closed' (penutup shift kemarin) — bukan
+  // absen hari ini, jangan kunci mode.
   const attendanceMode = useMemo(() => {
     const todayItems = history.filter(
-      (item) => isSameLocalDate(item.absen_time) && !isRejectedAttendance(item)
+      (item) =>
+        isSameLocalDate(item.absen_time) &&
+        !isRejectedAttendance(item) &&
+        !(
+          (item.is_cross_date === 1 || item.is_cross_date === "1") &&
+          item.sesi_status === "closed"
+        )
     );
     const hasLembur = todayItems.some((item) => item.is_lembur === 1 || item.is_lembur === "1");
     const hasRegular = todayItems.some((item) => item.is_lembur !== 1 && item.is_lembur !== "1");
@@ -776,6 +808,7 @@ const AbsenKaryawan = () => {
         setNoJadwalMessage(
           response.data.no_jadwal_assigned ? response.data.message : ""
         );
+        setUsesJadwalHarian(Boolean(response.data.uses_jadwal_harian));
 
         const todayStatus = buildTodayAttendanceStatus(historyRows);
         const hasCompletedRegularDay = hasCompletedRegularAttendanceStatus(todayStatus);
@@ -1111,6 +1144,22 @@ const AbsenKaryawan = () => {
 
     if (!selectedAbsenType || !selectedTypeDetail) {
       Swal.fire("Error", "Wajib pilih tipe absen yang valid.", "error");
+      return;
+    }
+
+    // Absen masuk hanya boleh mulai 1 jam sebelum jam masuk. HANYA user jalur
+    // jadwal harian (uses_jadwal_harian). Cegah di FE supaya user tak upload foto
+    // sia-sia; guard BE tetap sumber kebenaran.
+    const earlyMasuk =
+      usesJadwalHarian && !effectiveLemburMode
+        ? checkEarlyMasuk(selectedTypeDetail, new Date())
+        : { blocked: false };
+    if (earlyMasuk.blocked) {
+      Swal.fire(
+        "Belum waktunya absen",
+        `Absen masuk baru dibuka 1 jam sebelum jam masuk (${earlyMasuk.startAt}). Silakan absen mulai pukul ${earlyMasuk.openAt}.`,
+        "warning"
+      );
       return;
     }
 
@@ -1535,7 +1584,7 @@ const AbsenKaryawan = () => {
         );
       })()}
 
-      {hasAvailableLemburTypes && !effectiveLemburMode && todayHasRegular && attendanceMode !== "lembur" && (
+      {hasAvailableLemburTypes && !effectiveLemburMode && hasCompletedRegularAttendance && attendanceMode !== "lembur" && (
         <button
           onClick={() => {
             setIsLemburMode(true);

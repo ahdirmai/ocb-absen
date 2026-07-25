@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+- **Batas absen masuk: 1 jam sebelum jam masuk (khusus jadwal harian)** — user jalur jadwal-harian hanya boleh absen masuk mulai 1 jam sebelum `start_time` tipe. Ex: start 15:00 → paling awal 14:00. Telat tetap boleh. User non-jadwal tak dibatasi.
+  - BE (`absensi.controller.js`): guard `isMasuk && usesJadwalHarian`, tolak 400 bila `minutesUntilStart > 60` (`EARLY_MASUK_WINDOW_MINUTES`). Wrap tengah malam ditangani. `userUsesJadwalHarian` di-export dari `absenManagement.model.js`.
+  - BE (`absenManagement.controller.js`): shift-user response +`uses_jadwal_harian`.
+  - FE (`AbsenKaryawan.jsx`): `checkEarlyMasuk` pre-check di `handleSubmit` (hanya bila `uses_jadwal_harian` & non-lembur) → warning, cegah upload foto sia-sia.
+
+### Fixed
+- **Button "Mulai Lembur" muncul sebelum regular selesai** (`AbsenKaryawan.jsx`) — syarat button pakai `todayHasRegular` (cukup ada masuk), diganti `hasCompletedRegularAttendance` (masuk+keluar komplit). Selaras BE hard-guard lembur.
+- **Sesi cross-date `closed` salah kunci mode absen** — `attendanceMode` exclude row `is_cross_date=1` bersesi `closed` (penutup shift kemarin, bukan absen hari ini). Cegah salah lock mode + salah picu lembur.
+
 ### Changed
 - **Halaman `/jadwal-harian` hanya tampilkan OC + karyawan yang jadwal-harian AKTIF** — sebelumnya dropdown OC tampilkan semua OC 1-40 dan matrix tampilkan semua karyawan retail, walau shift jadwal-harian tak aktif.
   - BE endpoint baru `GET /api/jadwal-harian/active-retails` (`getActiveJadwalRetails`): retail dgn shifting `uses_jadwal_harian=1` + periode mencakup CURDATE(). CSV `retail_id` di-expand via `FIND_IN_SET` join retail.
