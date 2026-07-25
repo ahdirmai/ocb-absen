@@ -102,33 +102,58 @@ const createAbsensi = async (req, res) => {
       selectedDesc.includes("keluar") || selectedDesc.includes("pulang");
     const isMasuk = selectedDesc.includes("masuk");
 
-    // Hard-guard lembur: lembur hanya boleh setelah shift regular hari ini komplit
-    // (masuk + keluar). Lembur-keluar wajib didahului lembur-masuk.
-    // Baca sesi (dual-path): prefer absensi_sesi, fallback count LIKE utk data pra-sesi.
+    // Hard-guard lembur. Dua jalur precondition:
+    // - Jadwal-harian: user gantikan karyawan toko lain di shift beda (komplemen).
+    //   Boleh lembur sebelum/sesudah shift regular hari itu — TAPI tidak saat
+    //   sedang menjalani shift regular (sesi regular OPEN = mid-shift, tak bisa
+    //   di dua tempat). includeYesterday menangkap subuh cross-date semalam.
+    // - Non-jadwal: perilaku lama — regular hari ini wajib komplit (masuk+keluar).
+    // Lembur-keluar wajib didahului lembur-masuk (semua jalur, di bawah).
     if (body.is_lembur === 1) {
-      const regularSesi = await sesiModel.getTodaySesiSummary(
-        body.user_id,
-        false
-      );
-      // Regular komplit = ada sesi regular closed, ATAU (fallback pra-sesi) count masuk+keluar.
-      let regularComplete = regularSesi.hasClosed;
-      if (!regularComplete && regularSesi.closedCount === 0 && regularSesi.openCount === 0) {
-        const regularToday = await absensiModel.getTodayDirectionSummaryByLembur(
+      const isJadwalHarianUser =
+        await absenManagementModel.userUsesJadwalHarian(body.user_id);
+
+      if (isJadwalHarianUser) {
+        const regularSesi = await sesiModel.getTodaySesiSummary(
+          body.user_id,
+          false,
+          true
+        );
+        if (regularSesi.hasOpen) {
+          removeUploadedImage(file.filename);
+
+          return res.status(400).json({
+            message:
+              "Selesaikan shift regular Anda dulu (absen keluar) sebelum lembur.",
+            status: "failed",
+            status_code: "400",
+          });
+        }
+      } else {
+        const regularSesi = await sesiModel.getTodaySesiSummary(
           body.user_id,
           false
         );
-        regularComplete = regularToday.masuk >= 1 && regularToday.keluar >= 1;
-      }
+        // Regular komplit = ada sesi regular closed, ATAU (fallback pra-sesi) count masuk+keluar.
+        let regularComplete = regularSesi.hasClosed;
+        if (!regularComplete && regularSesi.closedCount === 0 && regularSesi.openCount === 0) {
+          const regularToday = await absensiModel.getTodayDirectionSummaryByLembur(
+            body.user_id,
+            false
+          );
+          regularComplete = regularToday.masuk >= 1 && regularToday.keluar >= 1;
+        }
 
-      if (!regularComplete) {
-        removeUploadedImage(file.filename);
+        if (!regularComplete) {
+          removeUploadedImage(file.filename);
 
-        return res.status(400).json({
-          message:
-            "Lembur hanya bisa dilakukan setelah absen masuk dan keluar regular hari ini selesai.",
-          status: "failed",
-          status_code: "400",
-        });
+          return res.status(400).json({
+            message:
+              "Lembur hanya bisa dilakukan setelah absen masuk dan keluar regular hari ini selesai.",
+            status: "failed",
+            status_code: "400",
+          });
+        }
       }
 
       if (isKeluar) {
@@ -256,14 +281,18 @@ const createAbsensi = async (req, res) => {
     // Absen MASUK hanya boleh mulai 1 jam sebelum jam masuk (start_time).
     // Ex: start_time 15:00 -> paling awal boleh absen 14:00. Sebelum itu ditolak.
     // Telat (setelah start_time) tetap boleh (ditangani status_absen di bawah).
-    // Keluar/lembur & tipe non-masuk (kebersihan/parkir) tak kena guard ini.
-    // HANYA untuk user jalur jadwal harian (uses_jadwal_harian aktif) — user
-    // non-jadwal (retail biasa) tak dibatasi window early ini.
-    const usesJadwalHarian =
+    // Keluar & tipe non-masuk (kebersihan/parkir) tak kena guard ini.
+    // Berlaku untuk:
+    //   - Regular jalur jadwal harian (uses_jadwal_harian aktif).
+    //   - LEMBUR masuk (semua Sales Toko) — gantikan filter window FE lama.
+    // User non-jadwal REGULAR (retail biasa) tetap tak dibatasi.
+    const isJadwalHarianRegular =
       !body.is_lembur &&
       (await absenManagementModel.userUsesJadwalHarian(body.user_id));
+    const applyEarlyMasukGuard =
+      isMasuk && !isKeluar && (isJadwalHarianRegular || body.is_lembur === 1);
 
-    if (isMasuk && !isKeluar && usesJadwalHarian) {
+    if (applyEarlyMasukGuard) {
       const EARLY_MASUK_WINDOW_MINUTES = 60;
       const toMinutes = (hhmmss) => {
         const [h, m] = String(hhmmss).split(":").map((n) => parseInt(n, 10));

@@ -52,7 +52,10 @@ node src/index.js
 
 > **Absen telat (Sales Toko/Trainee):** Absen lewat `end_time` → `status_approval=1` (waiting). Keluar diblok sampai masuk di-approve.
 
-> **Lembur (Sales Toko/Trainee):** Setelah absen regular, user bisa lembur pakai tipe Pagi lain (S1/S2). Pilih OC → submit → `is_lembur=1` + approval.
+> **Lembur (Sales Toko):** User bisa lembur (gantikan karyawan toko lain) pakai tipe shift beda, pilih OC → submit → `is_lembur=1` + approval. Trainee dikecualikan.
+> - **Non-jadwal:** tipe lembur = PAGI saja, wajib absen regular hari ini komplit dulu.
+> - **Jadwal-harian:** tipe lembur = kategori KOMPLEMEN shift yang di-assign hari ini (assigned SUBUH → Pagi+Sore; Sore → Pagi+Subuh; Pagi → Sore+Subuh). Boleh lembur sebelum/sesudah shift regular, diblokir hanya saat sedang menjalani shift regular (sesi regular open).
+> - **Batas jam lembur masuk:** sama dgn regular jadwal-harian — hanya boleh 1 jam sebelum `start_time` tipe (mis. SORE masuk 15:00 → mulai 14:00). Gantikan filter window lama.
 
 ### Jadwal Shift Harian
 > **Aktivasi:** User masuk jalur jadwal harian bila punya shifting aktif hari ini (`start_date <= today <= end_date`) dengan flag `uses_jadwal_harian=1`. Set flag via toggle di halaman Shift. (Sebelumnya hardcode `category_user IN (18,21)`.)

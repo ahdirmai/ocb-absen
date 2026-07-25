@@ -163,11 +163,41 @@ const getTypeAbsenByJadwal = async (userId) => {
   return dbpool.execute(SQLQuery, [userId]);
 };
 
-// Tipe absen lembur HANYA untuk Sales Toko (cat 18): masuk+keluar Pagi saja.
-// Trainee Sales Toko (cat 21) TIDAK boleh lembur — sengaja dikecualikan
-// (id_category IN (18,0) + name NOT LIKE '%TRAINEE%').
-// Exclude absen_masuk_id + absen_keluar_id dari jadwal hari ini (sudah dipakai regular).
+// Tipe absen lembur untuk Sales Toko (cat 18). Trainee (cat 21) TIDAK boleh —
+// dikecualikan (id_category IN (18,0) + name NOT LIKE '%TRAINEE%').
+// Selalu exclude absen_masuk_id + absen_keluar_id jadwal hari ini (dipakai regular).
+//
+// Dua jalur:
+// - Jadwal-harian + ada jadwal hari ini: lembur = KOMPLEMEN kategori shift yang
+//   di-assign (mis. assigned SUBUH/Malam → tampil Pagi+Sore). User bisa gantikan
+//   karyawan toko lain di shift beda dari shift regularnya.
+// - Non-jadwal (atau jadwal-harian tanpa jadwal hari ini): perilaku lama, Pagi saja.
 const getLemburTypes = async (userId) => {
+  const isJadwalHarian = await userUsesJadwalHarian(userId);
+
+  let assignedKategori = null;
+  if (isJadwalHarian) {
+    const [jrows] = await dbpool.query(
+      `SELECT tm.kategori_absen
+       FROM jadwal_harian j
+       JOIN tipe_absen tm ON tm.absen_id = j.absen_masuk_id
+       WHERE j.user_id = ? AND j.tanggal = CURDATE() AND j.is_deleted = 0
+       LIMIT 1`,
+      [userId]
+    );
+    assignedKategori = jrows.length > 0 ? jrows[0].kategori_absen : null;
+    // Jadwal-harian tapi belum di-assign hari ini → komplemen tak terdefinisi,
+    // tak ada lembur (return kosong).
+    if (!assignedKategori) {
+      return [[]];
+    }
+  }
+
+  // Jalur jadwal-harian: kategori KOMPLEMEN (≠ assigned). Legacy: Pagi saja.
+  const kategoriFilter = isJadwalHarian
+    ? "LOWER(t.kategori_absen) <> LOWER(?)"
+    : "LOWER(t.kategori_absen) = 'pagi'";
+
   const SQLQuery = `
     SELECT DISTINCT
       t.absen_id, t.name, t.description, t.kategori_absen,
@@ -179,7 +209,7 @@ const getLemburTypes = async (userId) => {
     LEFT JOIN retail r ON r.retail_id = t.retail_id
     WHERE t.is_deleted = 0
       AND (ga.id_category IN (18, 0))
-      AND LOWER(t.kategori_absen) = 'pagi'
+      AND ${kategoriFilter}
       AND (LOWER(t.description) LIKE '%masuk%' OR LOWER(t.description) LIKE '%keluar%' OR LOWER(t.description) LIKE '%pulang%')
       AND t.name NOT LIKE '%TRAINEE%'
       AND t.absen_id NOT IN (
@@ -190,7 +220,11 @@ const getLemburTypes = async (userId) => {
         WHERE j.user_id = ? AND j.tanggal = CURDATE() AND j.is_deleted = 0
       )
     ORDER BY t.name ASC, t.description ASC`;
-  return dbpool.execute(SQLQuery, [userId, userId]);
+
+  const params = isJadwalHarian
+    ? [assignedKategori, userId, userId]
+    : [userId, userId];
+  return dbpool.execute(SQLQuery, params);
 };
 
 // User dianggap pakai jalur jadwal harian bila punya shifting aktif hari ini

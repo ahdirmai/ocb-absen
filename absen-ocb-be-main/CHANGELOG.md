@@ -3,6 +3,17 @@
 ## [Unreleased]
 
 ### Added
+- **Lembur staff jadwal-harian: cover shift lain (kategori komplemen)** — staff jadwal-harian (mis. di-assign SUBUH) bisa menggantikan karyawan toko lain di shift beda via lembur. Sebelumnya lembur hardcode PAGI saja.
+  - BE (`absenManagement.model.js` `getLemburTypes`): jalur jadwal-harian → tipe lembur = kategori KOMPLEMEN shift assigned hari ini (assigned Malam/SUBUH → Pagi+Sore; Sore → Pagi+Malam; Pagi → Sore+Malam). Tetap exclude tipe jadwal hari itu + Trainee. Non-jadwal → tetap PAGI-only (legacy). Jadwal-harian tanpa jadwal hari ini → kosong.
+  - BE (`absensi.controller.js` hard-guard lembur): jalur jadwal-harian → lembur boleh sebelum/sesudah shift regular, diblokir HANYA saat sedang menjalani shift regular (sesi regular OPEN, `includeYesterday` tangkap subuh cross-date). Non-jadwal → tetap wajib regular komplit dulu. Guard lembur-keluar-wajib-ada-lembur-masuk tak berubah (semua jalur).
+  - FE (`AbsenKaryawan.jsx`): button "Mulai Lembur" — `usesJadwalHarian ? !regularInProgress : hasCompletedRegularAttendance`. `regularInProgress` = ada sesi regular open (mid-shift). Menjaga fix mid-shift (button hidden saat masuk regular belum keluar).
+  - **Hapus filter window jam lembur** — dulu tipe lembur cuma tampil saat jam masuk window kategorinya (`isWithinShiftWindow`), bikin shift Sore tak muncul sebelum 14:00. Diganti: semua tipe komplemen tampil, batas waktu ditegakkan guard 1-jam-sebelum-start. BE early-masuk guard (`absensi.controller.js`) diperluas cover LEMBUR masuk (bukan cuma regular jadwal-harian). FE `filteredLemburTypes` drop `isWithinShiftWindow`; pre-check `checkEarlyMasuk` juga jalan di mode lembur.
+  - **Card "Status Hari Ini" adaptif mode + info lembur** (`AbsenKaryawan.jsx`): mode lembur aktif → card tampil status LEMBUR (header "Status Lembur", `buildTodayLemburStatus`); mode regular → status regular. Card regular tampil badge kecil "Ada absen lembur hari ini" bila ada lembur (`hasLemburToday`, independen dari regular-complete).
+
+### Fixed
+- **Absen lembur salah tampil sbg status regular** (`AbsenKaryawan.jsx` `buildTodayAttendanceStatus`) — card "Status Hari Ini" (regular) sebelumnya menghitung baris `is_lembur=1`, bikin lembur muncul sbg masuk/keluar regular + salah picu label "Attempt Lembur" pd tipe regular. Fix: exclude `is_lembur=1` dari card regular.
+- **Arah attempt regular salah "keluar" saat ada lembur** — FE fallback `is_absen_today` (hitung SEMUA absen termasuk lembur) keliru anggap masuk regular sudah → tipe regular (subuh) diarahkan "keluar". Fix: skip fallback bila ada absen lembur hari ini (`hasLemburTodayRows`); sumber arah regular = `todayStatus` (sudah exclude lembur).
+
 - **Batas absen masuk: 1 jam sebelum jam masuk (khusus jadwal harian)** — user jalur jadwal-harian hanya boleh absen masuk mulai 1 jam sebelum `start_time` tipe. Ex: start 15:00 → paling awal 14:00. Telat tetap boleh. User non-jadwal tak dibatasi.
   - BE (`absensi.controller.js`): guard `isMasuk && usesJadwalHarian`, tolak 400 bila `minutesUntilStart > 60` (`EARLY_MASUK_WINDOW_MINUTES`). Wrap tengah malam ditangani. `userUsesJadwalHarian` di-export dari `absenManagement.model.js`.
   - BE (`absenManagement.controller.js`): shift-user response +`uses_jadwal_harian`.
