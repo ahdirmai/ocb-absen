@@ -1,7 +1,7 @@
 const dbpool = require("../config/database");
 
 const getAlltypeAbsen = () => {
-  const SQLQuery = `SELECT t.absen_id, t.name , t.fee, t.description, t.retail_id, r.latitude, r.longitude, r.radius, r.name as retail_name, t.start_time, t.end_time, uc.category_user, uc.id_category as group_absen
+  const SQLQuery = `SELECT t.absen_id, t.name , t.fee, t.description, t.retail_id, r.latitude, r.longitude, r.radius, r.name as retail_name, t.start_time, t.end_time, t.kategori_absen, t.is_cross_date, uc.category_user, uc.id_category as group_absen
                     FROM tipe_absen t
                     LEFT JOIN retail r ON r.retail_id = t.retail_id
                     LEFT JOIN user_category uc ON uc.id_category = t.group_absen
@@ -21,7 +21,7 @@ const getAlltypeAbsen = () => {
 
 const createNewAbsenType = async (body) => {
   const query =
-    "INSERT INTO tipe_absen (name, description, fee, start_time, end_time, kategori_absen,  created_at, created_by )VALUES (?,?,?,?,?,?,?,?)";
+    "INSERT INTO tipe_absen (name, description, fee, start_time, end_time, kategori_absen, is_cross_date, created_at, created_by )VALUES (?,?,?,?,?,?,?,?,?)";
   const values = [
     body.name,
     body.description,
@@ -29,6 +29,7 @@ const createNewAbsenType = async (body) => {
     body.start_time,
     body.end_time,
     body.kategori_absen,
+    body.is_cross_date || 0,
     body.created_at,
     body.created_by,
   ];
@@ -316,7 +317,7 @@ const updateAbsenType2 = async (absenId, data) => {
 
 const updateAbsenType = async (body, absenId) => {
     const query = `UPDATE tipe_absen SET name = ?,description = ?,fee = ?,start_time = ?,
-        end_time = ?, kategori_absen = ?,updated_at = ?,updated_by = ? WHERE absen_id = ?
+        end_time = ?, kategori_absen = ?, is_cross_date = ?,updated_at = ?,updated_by = ? WHERE absen_id = ?
     `;
     const values = [
       body.name || null,
@@ -325,6 +326,7 @@ const updateAbsenType = async (body, absenId) => {
       body.start_time || null,
       body.end_time || null,
       body.kategori_absen || null,
+      body.is_cross_date ? 1 : 0,
       body.updated_at || null,
       body.updated_by || null,
       absenId

@@ -77,13 +77,99 @@ const isRejectedAttendance = (item) => {
   );
 };
 
+// Batas waktu keluar cross-date: 3 jam setelah jam keluar terjadwal. Lewat
+// batas → sesi dianggap basi (lupa keluar), user boleh absen masuk baru.
+const CROSS_DATE_KELUAR_GRACE_HOURS = 3;
+
+// Deadline keluar utk sesi cross-date open. Jam keluar terjadwal = start_time
+// tipe KELUAR pasangannya (`keluar_start_time`, di-join BE), BUKAN end_time
+// masuk (itu window absen masuk sempit, mis. SUBUH 23:00-23:10). Keluar jatuh
+// hari BERIKUTNYA setelah tanggal masuk (definisi cross-date). Deadline = jam
+// keluar + grace 3 jam. Return ms epoch atau null bila data tak cukup (tanpa
+// deadline → jangan blokir, anggap masih wajib keluar).
+const getCrossDateKeluarDeadline = (masukRow) => {
+  const masukTime = masukRow?.absen_time ? new Date(masukRow.absen_time) : null;
+  const keluarTime = String(masukRow?.keluar_start_time || "").trim(); // "HH:mm[:ss]"
+  if (!masukTime || Number.isNaN(masukTime.getTime()) || !keluarTime) return null;
+
+  const [h, m] = keluarTime.split(":").map((n) => parseInt(n, 10));
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+
+  const keluar = new Date(masukTime);
+  keluar.setDate(keluar.getDate() + 1);
+  keluar.setHours(h, m, 0, 0);
+  return keluar.getTime() + CROSS_DATE_KELUAR_GRACE_HOURS * 60 * 60 * 1000;
+};
+
+// Cari sesi regular open LINTAS-HARI yang wajib keluar (shift SORE 9 JAM /
+// SUBUH yang masuk kemarin, keluar hari ini). Hanya tipe is_cross_date=1 yang
+// dianggap "wajib keluar", DAN masih dalam 3 jam dari jam keluar terjadwal.
+// Sesi open is_cross_date=0 tanggal lampau, ATAU cross-date yang sudah lewat
+// batas 3 jam = BASI (lupa keluar) → diabaikan supaya user boleh absen masuk
+// baru (auto-close jadi incomplete di BE). Sumber kebenaran arah = flag tipe +
+// status sesi, bukan tanggal/jam. Return baris masuk (punya kategori_absen untuk
+// lock tipe keluar) atau null. Masuk same-day hari ini ditangani doneDirections.
+const findOpenRegularMasuk = (rows = []) => {
+  const now = Date.now();
+  const openMasuk = rows.filter((item) => {
+    if (
+      !(
+        item?.sesi_status === "open" &&
+        item?.sesi_direction === "masuk" &&
+        item?.is_lembur !== 1 &&
+        item?.is_lembur !== "1" &&
+        (item?.is_cross_date === 1 || item?.is_cross_date === "1") &&
+        !isRejectedAttendance(item)
+      )
+    ) {
+      return false;
+    }
+    // Lewat batas 3 jam dari jam keluar → basi, jangan paksa keluar.
+    const deadline = getCrossDateKeluarDeadline(item);
+    return deadline == null || now <= deadline;
+  });
+  if (openMasuk.length === 0) return null;
+  return openMasuk.sort(
+    (a, b) => new Date(b.absen_time).getTime() - new Date(a.absen_time).getTime()
+  )[0];
+};
+
+// Sesi cross-date aktif = tipe is_cross_date=1, sesi masih OPEN (masuk kemarin,
+// belum keluar), DAN belum lewat deadline keluar (jam keluar terjadwal + grace 3
+// jam). Dipakai agar card tampilkan masuk kemarin untuk shift lintas-hari yang
+// masih BERJALAN. HANYA 'open': sesi 'closed' = shift kemarin sudah tuntas,
+// jangan dihitung sebagai kelengkapan absen hari ini (else salah picu lembur).
+// Absen keluarnya sendiri bertanggal hari ini → tetap tampil via isSameLocalDate.
+const isCrossDateSesiActive = (item, now = Date.now()) => {
+  if (!(item?.is_cross_date === 1 || item?.is_cross_date === "1")) return false;
+  if (item?.sesi_status !== "open") return false;
+  const deadline = getCrossDateKeluarDeadline(item);
+  return deadline == null || now <= deadline;
+};
+
 const buildTodayAttendanceStatus = (rows = []) => {
   const status = { masuk: null, keluar: null };
+  const now = Date.now();
 
   rows.forEach((item) => {
     const direction = getAbsenDirection(item);
 
-    if (!direction || !isSameLocalDate(item.absen_time)) {
+    if (!direction) {
+      return;
+    }
+
+    // Shift cross-date yang sesinya SUDAH closed = milik tanggal mulainya
+    // (kemarin), bukan hari ini — walau absen keluarnya bertanggal hari ini.
+    // Jangan hitung di card hari ini (else keluar penutup shift kemarin salah
+    // tampil sbg "Absen Keluar hari ini" + salah picu lembur).
+    const isCrossDate = item?.is_cross_date === 1 || item?.is_cross_date === "1";
+    if (isCrossDate && item?.sesi_status === "closed") {
+      return;
+    }
+
+    // Absen hari ini, ATAU masuk shift cross-date yang sesinya masih OPEN (mis.
+    // SUBUH masuk kemarin, belum keluar) — tetap dihitung.
+    if (!isSameLocalDate(item.absen_time) && !isCrossDateSesiActive(item, now)) {
       return;
     }
 
@@ -230,6 +316,7 @@ const getAttendanceStatusLabel = (item) => {
 
 const AbsenKaryawan = () => {
   const [loading, setLoading] = useState(false);
+  const [now, setNow] = useState(new Date());
   const [location, setLocation] = useState(initialLocation);
   const [locationError, setLocationError] = useState("");
   const [photo, setPhoto] = useState(null);
@@ -272,6 +359,12 @@ const AbsenKaryawan = () => {
         Math.sin(dLon / 2);
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
+
+  // Jam realtime — tick tiap detik.
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const todayAttendanceStatus = useMemo(
     () => buildTodayAttendanceStatus(history),
@@ -698,14 +791,31 @@ const AbsenKaryawan = () => {
           doneDirections.add("masuk");
         }
 
-        const nextRegularDirection = !doneDirections.has("masuk")
-          ? "masuk"
-          : !doneDirections.has("keluar")
-            ? "keluar"
-            : "";
+        // Sesi regular open lintas-hari (mis. SUBUH/SORE 9 JAM masuk kemarin,
+        // keluar hari ini). Bila ada → user WAJIB keluar, override arah "masuk".
+        // Sumber: absensi_sesi.status='open', bukan tanggal (isSameLocalDate
+        // tak lihat masuk kemarin).
+        const openRegularMasuk = findOpenRegularMasuk(historyRows);
+
+        const nextRegularDirection = openRegularMasuk
+          ? "keluar"
+          : !doneDirections.has("masuk")
+            ? "masuk"
+            : !doneDirections.has("keluar")
+              ? "keluar"
+              : "";
         const nextOvertimeDirection = hasCompletedRegularDay
           ? getNextOvertimeDirection(historyRows)
           : "";
+
+        // Kategori absen masuk regular (untuk lock tipe keluar).
+        // Keluar regular harus kategori sama dgn masuk → cegah sesi pecah.
+        // Prefer sesi open lintas-hari; fallback ke masuk hari ini.
+        const masukRegularKategori = String(
+          openRegularMasuk?.kategori_absen ||
+            todayStatus.masuk?.kategori_absen ||
+            ""
+        ).trim();
 
         const filteredTypes = rawTypes
           .filter((type) => {
@@ -719,7 +829,21 @@ const AbsenKaryawan = () => {
               return false;
             }
 
-            return direction === (hasCompletedRegularDay ? nextOvertimeDirection : nextRegularDirection);
+            if (direction !== (hasCompletedRegularDay ? nextOvertimeDirection : nextRegularDirection)) {
+              return false;
+            }
+
+            // Lock keluar regular ke kategori masuknya (bila kategori tersedia).
+            if (
+              !hasCompletedRegularDay &&
+              direction === "keluar" &&
+              masukRegularKategori &&
+              String(type.kategori_absen || "").trim() !== masukRegularKategori
+            ) {
+              return false;
+            }
+
+            return true;
           })
           .sort((a, b) => {
             const directionA = getAbsenDirection(a);
@@ -1262,6 +1386,31 @@ const AbsenKaryawan = () => {
         </button>
       </div>
 
+      <div
+        style={{
+          background: "#2c3e50",
+          color: "#fff",
+          borderRadius: "12px",
+          padding: "14px",
+          marginBottom: "20px",
+          textAlign: "center",
+        }}
+      >
+        <p style={{ margin: 0, fontSize: "13px", opacity: 0.85 }}>
+          {format(now, "EEEE, dd MMMM yyyy", { locale: localeId })}
+        </p>
+        <p
+          style={{
+            margin: "4px 0 0",
+            fontSize: "28px",
+            fontWeight: "bold",
+            letterSpacing: "1px",
+          }}
+        >
+          {format(now, "HH:mm:ss", { locale: localeId })}
+        </p>
+      </div>
+
       {userProfile && (
         <div
           style={{
@@ -1307,6 +1456,14 @@ const AbsenKaryawan = () => {
                 ? "#f39c12"
                 : "#27ae60";
 
+          // Cross-date aktif → header tampil nama tipe absennya (mis. "SUBUH 9
+          // JAM"), bukan "Status Hari Ini" statis. Shift lintas-hari bukan absen
+          // "hari ini" biasa.
+          const headerLabel =
+            item && isCrossDateSesiActive(item)
+              ? String(item.category_absen || "").trim() || "Shift Lintas Hari"
+              : "Status Hari Ini";
+
           return (
             <div
               key={direction}
@@ -1318,7 +1475,7 @@ const AbsenKaryawan = () => {
               }}
             >
               <p style={{ margin: "0 0 6px", fontSize: "13px", color: "#555" }}>
-                Status Hari Ini
+                {headerLabel}
               </p>
               <p style={{ margin: "0 0 8px", fontWeight: "bold", color: "#2c3e50" }}>
                 {absenDirectionLabels[direction]}
@@ -1338,7 +1495,7 @@ const AbsenKaryawan = () => {
               </span>
               {item?.absen_time && (
                 <p style={{ margin: "8px 0 0", fontSize: "12px", color: "#555" }}>
-                  {format(new Date(item.absen_time), "HH:mm", { locale: localeId })}
+                  {format(new Date(item.absen_time), "dd MMM yyyy, HH:mm", { locale: localeId })}
                 </p>
               )}
               {hasOvertime && (

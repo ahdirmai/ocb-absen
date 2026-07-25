@@ -68,6 +68,15 @@ node src/index.js
 | POST | `/api/jadwal-harian/set-date` | Replace atomik jadwal retail+tanggal |
 | POST | `/api/jadwal-harian/delete/:id` | Soft delete |
 
+### Shift Lintas Hari (`is_cross_date`)
+> **Flag tipe absen:** Kolom `tipe_absen.is_cross_date` menandai shift yang masuk hari-N & keluar hari-N+1 (mis. SUBUH masuk 23:00 keluar 08:00, SORE 9 JAM masuk 16:00 keluar 01:00). Set via toggle "Absen Lintas Hari" di halaman Kelola Tipe Absen. Backfill awal via `docs/cross-date-flag.sql` / `scripts/migrate-cross-date-flag.js`.
+
+> **Arah absen:** Sesi cross-date `open` (masuk kemarin, belum keluar) → user diarahkan "keluar", bukan masuk baru. Sumber kebenaran = `absensi_sesi.status='open'` + flag `is_cross_date`, bukan tanggal/jam.
+
+> **Batas 3 jam:** "Wajib keluar" berlaku sampai 3 jam setelah jam keluar terjadwal (`start_time` tipe keluar pasangan + grace 3 jam, konstanta `CROSS_DATE_KELUAR_GRACE_HOURS`). Lewat batas → dianggap lupa keluar: user boleh absen masuk baru.
+
+> **Auto-close sesi basi:** Saat user absen masuk lagi, `markStaleOpenSesiIncomplete` tandai sesi open lampau jadi `incomplete` — same-day (`is_cross_date=0`) tanggal < hari ini, atau cross-date (`is_cross_date=1`) yang sudah lewat batas 3 jam. Cegah blokir + jaga akurasi lembur-guard.
+
 ### Lembur
 | Method | URL | Keterangan |
 |---|---|---|

@@ -36,6 +36,7 @@ const CatAbsen = () => {
     start_time: "",
     end_time: "",
     kategori_absen: "",
+    is_cross_date: 0,
   });
 
   const [groups, setGroups] = useState([]);
@@ -70,6 +71,7 @@ const CatAbsen = () => {
         start_time: item.start_time || "-",
         end_time: item.end_time || "-",
         kategori_absen: item.kategori_absen || "-",
+        is_cross_date: Number(item.is_cross_date) === 1 ? 1 : 0,
         category_user: item.groups
           ? item.groups.map((group) => `${group.category_user}`).join(", ")
           : "-",
@@ -209,6 +211,7 @@ const CatAbsen = () => {
         created_by: userId,
         created_at: DateNow,
         kategori_absen: selectedKatTime?.value || null,
+        is_cross_date: newCatabsen.is_cross_date ? 1 : 0,
         group_details,
       };
 
@@ -244,6 +247,7 @@ const CatAbsen = () => {
         start_time: "",
         end_time: "",
         group_absen: "",
+        is_cross_date: 0,
       });
       setSelectedGroup([]);
       setSelectedKatTime(null);
@@ -338,6 +342,7 @@ const CatAbsen = () => {
         start_time: selectedCatabsen.start_time,
         end_time: selectedCatabsen.end_time,
         kategori_absen: selectedKatTime?.value || null,
+        is_cross_date: selectedCatabsen.is_cross_date ? 1 : 0,
         group_details,
         updated_by: userId,
         updated_at: DateNow,
@@ -768,6 +773,31 @@ const CatAbsen = () => {
             </div>
           </div>
           <div className="form-group row">
+            <div className="col-12">
+              <div className="form-check">
+                <input
+                  type="checkbox"
+                  className="form-check-input"
+                  id="add-is-cross-date"
+                  checked={!!newCatabsen.is_cross_date}
+                  onChange={(e) =>
+                    setnewCatabsen({
+                      ...newCatabsen,
+                      is_cross_date: e.target.checked ? 1 : 0,
+                    })
+                  }
+                />
+                <label className="form-check-label" htmlFor="add-is-cross-date">
+                  Absen Lintas Hari (keluar besok)?{" "}
+                  <span className="text-secondary text-small">
+                    Centang untuk shift yang masuk hari ini & keluar dini hari
+                    besok (mis. SUBUH, SORE 9 JAM).
+                  </span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div className="form-group row">
             <label>
               Group Absen (
               <span className="text-secondary text-small">
@@ -890,6 +920,33 @@ const CatAbsen = () => {
                   placeholder="Pilih Kategori Time..."
                   isClearable
                 />
+              </div>
+
+              <div className="form-group">
+                <div className="form-check">
+                  <input
+                    type="checkbox"
+                    className="form-check-input"
+                    id="edit-is-cross-date"
+                    checked={!!selectedCatabsen.is_cross_date}
+                    onChange={(e) =>
+                      setSelectedCatabsen({
+                        ...selectedCatabsen,
+                        is_cross_date: e.target.checked ? 1 : 0,
+                      })
+                    }
+                  />
+                  <label
+                    className="form-check-label"
+                    htmlFor="edit-is-cross-date"
+                  >
+                    Absen Lintas Hari (keluar besok)?{" "}
+                    <span className="text-secondary text-small">
+                      Centang untuk shift yang masuk hari ini & keluar dini hari
+                      besok (mis. SUBUH, SORE 9 JAM).
+                    </span>
+                  </label>
+                </div>
               </div>
 
               <div className="form-group">

@@ -202,6 +202,45 @@ const createAbsensi = async (req, res) => {
           });
         }
       }
+
+      // Guard tipe keluar harus cocok dgn sesi masuk yang sedang open.
+      // Cegah user pilih tipe keluar beda kategori/jadwal → sesi pecah
+      // (masuk menggantung open + keluar jadi incomplete terpisah).
+      const openSesiAktif = await sesiModel.findAnyOpenSesi({
+        user_id: body.user_id,
+        is_lembur: body.is_lembur,
+        includeYesterday: isEarlyMorningKeluar,
+      });
+
+      if (openSesiAktif) {
+        let cocok = true;
+        if (openSesiAktif.jadwal_id != null) {
+          // Jalur jadwal harian: tipe keluar harus == absen_keluar_id jadwalnya.
+          const jadwalKeluarId = await sesiModel.getJadwalKeluarId(
+            openSesiAktif.jadwal_id
+          );
+          cocok =
+            jadwalKeluarId != null &&
+            String(jadwalKeluarId) === String(body.absen_type_id);
+        } else {
+          // Jalur non-jadwal / lembur: kategori keluar harus == kategori sesi open.
+          cocok =
+            String(getTimeDB.kategori_absen || "") ===
+            String(openSesiAktif.kategori_absen || "");
+        }
+
+        if (!cocok) {
+          removeUploadedImage(file.filename);
+
+          return res.status(400).json({
+            message: `Tipe absen keluar tidak cocok dengan absen masuk Anda (shift ${
+              openSesiAktif.kategori_absen || "-"
+            }). Pilih tipe keluar yang sesuai.`,
+            status: "failed",
+            status_code: "400",
+          });
+        }
+      }
     }
 
     const startTimeDBMoment = moment
@@ -300,6 +339,16 @@ const createAbsensi = async (req, res) => {
           });
         }
       } else {
+        // Auto-close sesi BASI (lupa keluar) sebelum buka sesi baru: tandai
+        // 'incomplete' sesi open tanggal lampau yang tipe masuknya same-day
+        // (is_cross_date=0). Sesi cross-date sah (SUBUH/SORE 9 JAM) tak disentuh.
+        // Cegah user terblokir + jaga akurasi lembur-guard.
+        await sesiModel.markStaleOpenSesiIncomplete(
+          conn,
+          body.user_id,
+          body.is_lembur
+        );
+
         // Absen masuk → buka sesi baru. Resolve jadwal_id (regular Sales Toko/Trainee).
         const jadwalId = body.is_lembur
           ? null

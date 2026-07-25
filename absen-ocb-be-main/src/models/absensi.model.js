@@ -97,7 +97,11 @@ const historyAbsensiPerUser = async (userId, body) => {
         SELECT
             a.absensi_id, a.user_id, u.name AS nama_karyawan, a.absen_time,
             a.retail_id, r.name AS retail_name, a.absen_type_id, a.photo_url,
-            ta.name AS category_absen, ta.description, ta.start_time, ta.end_time, ta.kategori_absen, ta.fee, a.reason,
+            ta.name AS category_absen, ta.description, ta.start_time, ta.end_time, ta.kategori_absen, ta.is_cross_date, ta.fee, a.reason,
+            (SELECT tk.start_time FROM tipe_absen tk
+               WHERE tk.name = ta.name AND tk.is_deleted = 0
+                 AND (LOWER(tk.description) LIKE '%keluar%' OR LOWER(tk.description) LIKE '%pulang%')
+               ORDER BY tk.absen_id LIMIT 1) AS keluar_start_time,
             sa.description AS status, uap.name AS approval_by, ap.description_status AS status_approval, a.is_valid, a.is_lembur,
             s.sesi_id, s.status AS sesi_status,
             CASE WHEN s.masuk_absensi_id = a.absensi_id THEN 'masuk'

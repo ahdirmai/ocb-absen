@@ -3,6 +3,31 @@
 ## [Unreleased]
 
 ### Added
+- **Flag `is_cross_date` di tipe absen + auto-close sesi basi** — bedakan "cross-date sah" (shift keluar besok) vs "lupa keluar" (sesi basi) yang dua-duanya menghasilkan sesi `open`. Lihat `docs/cross-date-flag-plan.md`.
+  - DB: kolom `tipe_absen.is_cross_date` (`docs/cross-date-flag.sql`), backfill SUBUH/SORE 9 JAM = 1, sisanya 0. Admin set via toggle CatAbsen.
+  - BE model: `createNewAbsenType`/`updateAbsenType` + `is_cross_date`; `getAlltypeAbsen` + `historyAbsensiPerUser` SELECT `is_cross_date`.
+  - BE auto-close (`absensi.controller.js` blok masuk): `markStaleOpenSesiIncomplete` tandai sesi open tanggal lampau bertipe `is_cross_date=0` jadi `incomplete` sebelum buka sesi baru — cegah user terblokir + jaga akurasi lembur-guard. Sesi cross-date sah tak disentuh.
+  - FE (`AbsenKaryawan.jsx`): `findOpenRegularMasuk` hanya trigger "wajib keluar" untuk sesi open `is_cross_date=1`. Sesi basi (`is_cross_date=0`) diabaikan → user boleh absen masuk baru.
+  - **Batas 3 jam cross-date**: "wajib keluar" untuk sesi cross-date hanya berlaku sampai 3 jam setelah jam keluar terjadwal (tanggal masuk +1 hari + grace 3 jam, `CROSS_DATE_KELUAR_GRACE_HOURS`). Jam keluar = `start_time` tipe KELUAR pasangan (match by `name`), BUKAN `end_time` masuk (itu window absen masuk sempit, mis. SUBUH 23:00-23:10). Lewat batas → dianggap lupa keluar: FE izinkan absen masuk baru, BE `markStaleOpenSesiIncomplete` tandai sesi jadi `incomplete`.
+  - `absensi.model.js` history SELECT + subquery `keluar_start_time` (start_time tipe keluar pasangan) untuk deadline FE. `absensiSesi.model.js` markStale LEFT JOIN tipe keluar via `name`.
+  - FE (`CatAbsen.jsx`): toggle "Absen Lintas Hari (keluar besok)?" di form tambah + edit.
+
+- **Live clock + card "Status Hari Ini" sadar sesi cross-date** (`AbsenKaryawan.jsx`)
+  - Jam realtime (hari, tanggal, jam:menit:detik) tick per detik di atas halaman.
+  - Card status: header dinamis → nama tipe absen bila sesi cross-date aktif (bukan "Status Hari Ini" statis). Waktu absen tampil tanggal + jam.
+  - `buildTodayAttendanceStatus` sekarang sesi-aware: hitung masuk shift cross-date yang sesinya masih `open` (masuk kemarin, belum keluar); TAPI exclude row cross-date bersesi `closed` (shift kemarin sudah tuntas — milik tanggal mulai, bukan hari ini). Cegah keluar penutup shift kemarin salah tampil sbg absen hari ini + salah picu jalur lembur.
+
+### Fixed
+- **FE arah absen cross-midnight (shift SORE 9 JAM / SUBUH)** — user dengan shift yang masuk kemarin & keluar hari ini (mis. SUBUH masuk 23:00, keluar 08:00 besok) sebelumnya salah diarahkan ke "absen masuk" lagi, bukan "keluar". Penyebab: FE `nextRegularDirection` pakai `isSameLocalDate` (hari ini saja), tak lihat masuk kemarin.
+  - `AbsenKaryawan.jsx`: deteksi sesi regular open dari history (`sesi_status='open'`, `sesi_direction='masuk'`, non-lembur, `is_cross_date=1`) — bila ada, override arah ke "keluar" + lock kategori tipe keluar ke sesi itu. Sumber kebenaran = `absensi_sesi.status` + flag `is_cross_date`, bukan tanggal/jam.
+
+- **Guard tipe absen keluar harus cocok dengan masuk** — cegah user pilih tipe keluar beda kategori/jadwal dari absen masuknya, yang bikin sesi pecah (masuk menggantung `open` + keluar jadi `incomplete` terpisah)
+  - BE (`absensi.controller.js` blok `isKeluar`): sebelum insert, `findAnyOpenSesi` cari sesi open aktif user; bila ada → tipe keluar divalidasi. Jalur jadwal harian: `absen_type_id` harus == `jadwal.absen_keluar_id`. Jalur non-jadwal/lembur: `kategori_absen` keluar harus == kategori sesi open. Tak cocok → HTTP 400.
+  - Berlaku 3 jalur: non-jadwal, lembur (`is_lembur` scope terpisah), jadwal harian. Guard server menutup celah bypass API (FE lock saja tidak cukup).
+  - FE (`AbsenKaryawan.jsx`): dropdown tipe keluar regular dikunci ke kategori absen masuk hari ini.
+  - Model baru: `absensiSesi.model.js` +`findAnyOpenSesi`, +`getJadwalKeluarId`.
+
+### Added
 - **Jadwal Shift Harian per-orang** — hanya untuk Sales Toko (`category_user=18`) & Trainee Sales Toko (`21`)
   - Tabel `jadwal_harian` (lihat `docs/jadwal-harian.sql`) — 1 baris = user + tanggal + retail + `absen_masuk_id` + `absen_keluar_id` (FK ke `tipe_absen.absen_id`), `UNIQUE(user_id, tanggal)`
   - Hanya tipe absen Masuk + Keluar yang ditampilkan (Kebersihan/Parkir/Display tidak)
