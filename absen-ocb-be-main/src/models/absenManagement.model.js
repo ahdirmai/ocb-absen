@@ -303,6 +303,7 @@ const getTypeAbsenWithGroups = async () => {
       ta.start_time,
       ta.end_time,
       ta.kategori_absen,
+      ta.is_cross_date,
       ta.created_at,
       ta.created_by,
       ga.id AS group_absen_id,

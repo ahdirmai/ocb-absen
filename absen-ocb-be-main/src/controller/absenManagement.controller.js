@@ -45,10 +45,11 @@ const getTypeAbsenWithGroups = async (req, res) => {
           start_time,
           end_time,
           kategori_absen,
+          is_cross_date,
           created_at,
           created_by,
         } = row;
-  
+
         // Jika absen_id belum ada di hasil, tambahkan
         if (!result[absen_id]) {
           result[absen_id] = {
@@ -59,6 +60,7 @@ const getTypeAbsenWithGroups = async (req, res) => {
             start_time,
             end_time,
             kategori_absen,
+            is_cross_date,
             created_at,
             created_by,
             groups: [],
