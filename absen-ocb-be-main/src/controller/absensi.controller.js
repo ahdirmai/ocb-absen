@@ -377,7 +377,15 @@ const createAbsensi = async (req, res) => {
     // Insert absensi + open/close absensi_sesi dalam 1 transaksi (atomic).
     // Bila sesi gagal → absensi rollback, hindari event tanpa sesi (orphan).
     const tanggalMasuk = timeAbsenMoment.format("YYYY-MM-DD");
-    const kategoriAbsen = getTimeDB.kategori_absen || null;
+    // Kategori sesi. Fallback ke kategori tipe KELUAR pasangan (by name) bila tipe
+    // ini kategori_absen NULL — jaga masuk & keluar pakai kategori sama agar
+    // findOpenSesi bisa memasangkan (cegah sesi cross-date pecah bila kategori
+    // tipe masuk ter-null saat edit tipe absen).
+    let kategoriAbsen = getTimeDB.kategori_absen || null;
+    if (!kategoriAbsen && getTimeDB.name) {
+      kategoriAbsen =
+        (await absensiModel.getKeluarKategoriByName(getTimeDB.name)) || null;
+    }
 
     const conn = await dbpool.getConnection();
     let result;

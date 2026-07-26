@@ -86,6 +86,26 @@ node src/index.js
 
 > **Auto-close sesi basi:** Saat user absen masuk lagi, `markStaleOpenSesiIncomplete` tandai sesi open lampau jadi `incomplete` — same-day (`is_cross_date=0`) tanggal < hari ini, atau cross-date (`is_cross_date=1`) yang sudah lewat batas 3 jam. Cegah blokir + jaga akurasi lembur-guard.
 
+> **Kategori tipe masuk = tipe keluar (WAJIB):** Pairing sesi cross-date match `absensi_sesi.kategori_absen`. `openSesi` ambil kategori dari tipe MASUK. Bila tipe MASUK `kategori_absen` NULL (mis. ter-null saat edit tipe absen di UI Kelola Tipe Absen), controller fallback ke kategori tipe KELUAR pasangan (`getKeluarKategoriByName`, match by `name`) agar masuk & keluar sekategori. **Jaga tipe masuk & keluar 1 shift punya `kategori_absen` SAMA** — beda kategori = sesi pecah (masuk menggantung open + keluar jadi `incomplete` terpisah).
+
+### Scripts Maintenance
+
+Dry-run default; `APPLY=1` untuk commit. **Wajib `npm run backup-db` dulu.** Jalankan dari root BE.
+
+| Script | Fungsi |
+|---|---|
+| `npm run backup-db` | Dump DB timestamped ke `backups/` (auto native `mysqldump` / `docker exec`) |
+| `scripts/fix-cross-date-sesi.js` | Perbaiki sesi cross-date pecah akibat kategori tipe masuk NULL. **STEP 1** restore `tipe_absen.kategori_absen` masuk (NULL → kategori keluar pasangan); **STEP 2** pasangkan ulang sesi keluar-orphan ke absen masuknya. STEP 2 butuh scope `--since=YYYY-MM-DD` atau `--date=YYYY-MM-DD` (tanpa itu dilewati, cegah sentuh orphan historis non-bug). |
+| `scripts/backfill-sesi.js` | Backfill `absensi_sesi` dari absensi historis (`APPLY=1`) |
+| `scripts/migrate-*.js` | Migrasi schema (idempotent, jalankan sekali) |
+
+Contoh fix cross-date sesi:
+```bash
+npm run backup-db
+node scripts/fix-cross-date-sesi.js --since=2026-07-25            # dry-run preview
+APPLY=1 node scripts/fix-cross-date-sesi.js --since=2026-07-25    # eksekusi
+```
+
 ### Lembur
 | Method | URL | Keterangan |
 |---|---|---|

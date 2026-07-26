@@ -74,6 +74,23 @@ const getKeluarStartTimeByName = async (name) => {
     return rows.length > 0 ? rows[0].start_time : null;
 }
 
+// Kategori shift = kategori_absen tipe KELUAR pasangan (match by name). Fallback
+// saat tipe MASUK punya kategori_absen NULL (mis. ter-null saat edit tipe absen) —
+// tanpa ini openSesi simpan kategori NULL & findOpenSesi gagal pasangkan keluar
+// (sesi cross-date pecah). Return kategori atau null bila tak ada pasangan.
+const getKeluarKategoriByName = async (name) => {
+    if (!name) return null;
+    const [rows] = await dbpool.query(
+        `SELECT kategori_absen FROM tipe_absen
+         WHERE name = ? AND is_deleted = 0
+           AND (LOWER(description) LIKE '%keluar%' OR LOWER(description) LIKE '%pulang%')
+           AND kategori_absen IS NOT NULL AND kategori_absen <> ''
+         ORDER BY absen_id LIMIT 1`,
+        [name]
+    );
+    return rows.length > 0 ? rows[0].kategori_absen : null;
+}
+
 const getPotonganLate = async (idPotongan) => {
     const [potongan] = await dbpool.query('SELECT value FROM potongan WHERE id = ? ', [idPotongan]);
     return potongan[0];
@@ -532,6 +549,7 @@ module.exports={
     totalAbsenPerMonth,
     getTimeDB,
     getKeluarStartTimeByName,
+    getKeluarKategoriByName,
     getUpline,
     approveAbsen,
     rejectAbsen,

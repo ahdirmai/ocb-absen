@@ -868,9 +868,25 @@ const AbsenKaryawan = () => {
             isSameLocalDate(item.absen_time) &&
             !isRejectedAttendance(item)
         );
+        // is_absen_today dari BE hitung DATE(absen_time)=CURDATE() tanpa sadar
+        // sesi. Absen KELUAR shift cross-date (mis. SUBUH: keluar 08:00 hari ini)
+        // penutup shift KEMARIN, sesinya sudah closed — bukan bukti masuk hari
+        // ini. Fallback add("masuk") hanya bila ada absen hari ini yang BUKAN
+        // penutup cross-date closed, else shift baru salah diarahkan "keluar".
+        const hasRealTodayAbsen = historyRows.some(
+          (item) =>
+            isSameLocalDate(item.absen_time) &&
+            !isRejectedAttendance(item) &&
+            !(
+              (item?.is_cross_date === 1 || item?.is_cross_date === "1") &&
+              item?.sesi_status === "closed" &&
+              item?.sesi_direction === "keluar"
+            )
+        );
         if (
           doneDirections.size === 0 &&
           !hasLemburTodayRows &&
+          hasRealTodayAbsen &&
           Number(response.data.is_absen_today) === 1
         ) {
           doneDirections.add("masuk");
