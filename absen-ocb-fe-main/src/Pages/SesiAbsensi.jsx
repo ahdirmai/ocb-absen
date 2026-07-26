@@ -116,6 +116,7 @@ const SesiAbsensi = () => {
   const [retailOptions, setRetailOptions] = useState([]);
   const [masukTipeOptions, setMasukTipeOptions] = useState([]);
   const [loadingPickers, setLoadingPickers] = useState(false);
+  const [loadingUserShift, setLoadingUserShift] = useState(false);
 
   // Debounce search
   useEffect(() => {
@@ -302,23 +303,55 @@ const SesiAbsensi = () => {
       status_absen: "",
       reason: "",
     });
+    setMasukTipeOptions([]);
     setLoadingPickers(true);
     try {
       const headers = authHeaders();
-      const [uRes, rRes, tRes] = await Promise.all([
+      const [uRes, rRes] = await Promise.all([
         axios.get(`${VITE_API_URL}/users`, { headers }),
         axios.get(`${VITE_API_URL}/retail`, { headers }),
-        axios.get(`${VITE_API_URL}/absensi/tipe-absen?direction=masuk`, { headers }),
       ]);
       const uData = uRes.data?.data ?? uRes.data;
       const rData = rRes.data?.data ?? rRes.data;
       setUserOptions(Array.isArray(uData) ? uData : []);
       setRetailOptions(Array.isArray(rData) ? rData : []);
-      setMasukTipeOptions(Array.isArray(tRes.data?.data) ? tRes.data.data : []);
     } catch (error) {
       Swal.fire("Error", error.response?.data?.message || error.message, "error");
     } finally {
       setLoadingPickers(false);
+    }
+  };
+
+  // Shift masuk menyesuaikan user dipilih (tipe absen yang di-assign ke user).
+  const onCreateUserChange = async (userId) => {
+    setCreateModal((prev) => ({ ...prev, user_id: userId, absen_type_id: "" }));
+    setMasukTipeOptions([]);
+    if (!userId) return;
+    setLoadingUserShift(true);
+    try {
+      const res = await axios.post(
+        `${VITE_API_URL}/absen-management/shift-user/${userId}`,
+        {},
+        { headers: authHeaders() }
+      );
+      const all = Array.isArray(res.data?.data) ? res.data.data : [];
+      // Filter arah masuk (dedup by absen_id).
+      const masuk = all.filter((t) => {
+        const d = String(t.description || "").toLowerCase();
+        return d.includes("masuk");
+      });
+      const seen = new Set();
+      const uniq = masuk.filter((t) => {
+        if (seen.has(t.absen_id)) return false;
+        seen.add(t.absen_id);
+        return true;
+      });
+      setMasukTipeOptions(uniq);
+    } catch (error) {
+      Swal.fire("Error", error.response?.data?.message || error.message, "error");
+      setMasukTipeOptions([]);
+    } finally {
+      setLoadingUserShift(false);
     }
   };
 
@@ -823,7 +856,7 @@ const SesiAbsensi = () => {
                   <select
                     className="form-control"
                     value={createModal.user_id}
-                    onChange={(e) => setCreateModal({ ...createModal, user_id: e.target.value })}
+                    onChange={(e) => onCreateUserChange(e.target.value)}
                   >
                     <option value="">-- pilih karyawan --</option>
                     {userOptions.map((u) => (
@@ -855,9 +888,18 @@ const SesiAbsensi = () => {
                   <select
                     className="form-control"
                     value={createModal.absen_type_id}
+                    disabled={!createModal.user_id || loadingUserShift}
                     onChange={(e) => setCreateModal({ ...createModal, absen_type_id: e.target.value })}
                   >
-                    <option value="">-- pilih shift --</option>
+                    <option value="">
+                      {!createModal.user_id
+                        ? "-- pilih karyawan dulu --"
+                        : loadingUserShift
+                        ? "memuat shift..."
+                        : masukTipeOptions.length === 0
+                        ? "-- tak ada shift ter-assign --"
+                        : "-- pilih shift --"}
+                    </option>
                     {masukTipeOptions.map((t) => (
                       <option key={t.absen_id} value={String(t.absen_id)}>
                         {t.name} — {t.description}
