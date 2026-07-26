@@ -1380,9 +1380,11 @@ const addAbsenToSesi = async (req, res) => {
         is_approval: 0,
         is_lembur: sesi.is_lembur,
       };
+      // Foto opsional (upload.single('photo_url')); fallback placeholder. Lokasi none.
+      const imageUrl = req.file?.filename || "manual-admin";
       const result = await absensiModel.createAbsensi(
         insertBody,
-        "manual-admin",         // imageUrl placeholder
+        imageUrl,
         status_absen,
         2,                      // status_approval = approved
         adminId,                // upline/approval_by = admin
@@ -1427,6 +1429,144 @@ const addAbsenToSesi = async (req, res) => {
   }
 };
 
+// POST /api/absensi/sesi/create — buat sesi absen baru (absen MASUK) dari nol.
+// Sesi 'open' (keluar diisi kemudian via add-absen). Pilih shift (absen_type_id
+// tipe masuk) → insert absensi masuk manual (placeholder foto/GPS) + openSesi.
+// Body: { user_id, retail_id, absen_type_id, absen_time, status_absen?, reason? }.
+const createNewSesi = async (req, res) => {
+  const adminId = req.user?.id;
+  const { user_id, retail_id, absen_type_id, absen_time, status_absen: statusInput, reason, is_lembur } = req.body;
+
+  if (!user_id || !retail_id || !absen_type_id || !absen_time) {
+    return res.status(400).json({
+      message: "user_id, retail_id, absen_type_id, absen_time wajib diisi.",
+      status: "failed",
+      status_code: "400",
+    });
+  }
+
+  try {
+    const tipe = await absensiModel.getTimeDB(Number(absen_type_id));
+    if (!tipe) {
+      return res.status(404).json({ message: "Tipe absen tidak ditemukan.", status: "failed", status_code: "404" });
+    }
+    // Tipe harus arah MASUK (sesi dibuka dari absen masuk).
+    const dir = String(tipe.description || "").toLowerCase();
+    const isMasuk = dir.includes("masuk");
+    if (!isMasuk) {
+      return res.status(400).json({
+        message: "Tipe absen harus arah MASUK untuk membuka sesi baru.",
+        status: "failed",
+        status_code: "400",
+      });
+    }
+
+    const newMoment = moment.tz(absen_time, "YYYY-MM-DD HH:mm:ss", timezone);
+    if (!newMoment.isValid()) {
+      return res.status(400).json({
+        message: "Format waktu absen tidak valid (YYYY-MM-DD HH:mm:ss).",
+        status: "failed",
+        status_code: "400",
+      });
+    }
+    const timeAbsenFull = newMoment.format("YYYY-MM-DD HH:mm:ss");
+    const tanggalMasuk = newMoment.format("YYYY-MM-DD");
+
+    // Recompute status_absen + potongan dari jam vs end_time tipe (override boleh).
+    const getPotonganLate = await absensiModel.getPotonganLate(1);
+    const potonganLate = Number(getPotonganLate?.value || 0);
+    const endTimeDB = moment.tz(tipe.end_time, "HH:mm:ss", timezone).format("HH:mm:ss");
+    const newTimeHHmmss = newMoment.format("HH:mm:ss");
+    let status_absen;
+    if (statusInput === 1 || statusInput === 2 || statusInput === "1" || statusInput === "2") {
+      status_absen = Number(statusInput);
+    } else {
+      status_absen = newTimeHHmmss < endTimeDB ? 1 : 2;
+    }
+    let potongan = 0;
+    if (status_absen === 2) {
+      const diffMinutes = moment(newTimeHHmmss, "HH:mm:ss").diff(moment(endTimeDB, "HH:mm:ss"), "minutes");
+      if (diffMinutes > 15) potongan = potonganLate;
+    }
+
+    // Kategori sesi = kategori tipe (fallback kategori keluar pasangan bila NULL).
+    let kategoriAbsen = tipe.kategori_absen || null;
+    if (!kategoriAbsen && tipe.name) {
+      kategoriAbsen = (await absensiModel.getKeluarKategoriByName(tipe.name)) || null;
+    }
+    const lembur = is_lembur === 1 || is_lembur === "1" ? 1 : 0;
+
+    const manualReason = String(reason || "").trim()
+      ? `${reason} [input manual admin]`
+      : "[input manual admin]";
+
+    const conn = await dbpool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      const insertBody = {
+        user_id: Number(user_id),
+        retail_id: Number(retail_id),
+        absen_type_id: tipe.absen_id,
+        latitude: 0,
+        longitude: 0,
+        reason: manualReason,
+        is_approval: 0,
+        is_lembur: lembur,
+      };
+      // Foto opsional; fallback placeholder. Lokasi none.
+      const imageUrl = req.file?.filename || "manual-admin";
+      const result = await absensiModel.createAbsensi(
+        insertBody, imageUrl, status_absen, 2, adminId, timeAbsenFull, potongan, 1, conn
+      );
+      const newAbsensiId = result.insertId;
+
+      const jadwalId = lembur
+        ? null
+        : await sesiModel.resolveJadwalId(Number(user_id), tipe.absen_id, tanggalMasuk, conn);
+
+      const newSesiId = await sesiModel.openSesi(conn, {
+        user_id: Number(user_id),
+        tanggal: tanggalMasuk,
+        retail_id: Number(retail_id),
+        jadwal_id: jadwalId,
+        kategori_absen: kategoriAbsen,
+        masuk_absensi_id: newAbsensiId,
+        is_lembur: lembur,
+        created_at: timeAbsenFull,
+      });
+
+      await logSesiActivity(
+        conn,
+        "ADD_ABSEN",
+        { sesi_id: newSesiId, direction: "masuk", absensi_id: newAbsensiId, absen_type_id: tipe.absen_id, created: true },
+        adminId
+      );
+
+      await conn.commit();
+      return res.json({
+        message: "Sesi baru dibuat (absen masuk). Isi absen keluar via tambah absen.",
+        status: "success",
+        status_code: "200",
+        data: { sesi_id: newSesiId, masuk_absensi_id: newAbsensiId, status_absen, potongan },
+      });
+    } catch (txError) {
+      await conn.rollback();
+      throw txError;
+    } finally {
+      conn.release();
+    }
+  } catch (error) {
+    console.error("Error createNewSesi:", error);
+    return res.status(500).json({
+      message: "Internal Server Error",
+      status: "failed",
+      status_code: "500",
+      serverMessage: error.message,
+    });
+  }
+};
+
 module.exports = {
   createAbsensi,
   approveAbsen,
@@ -1446,5 +1586,6 @@ module.exports = {
   updateSesiAbsensi,
   deleteSesiAbsensi,
   addAbsenToSesi,
+  createNewSesi,
   rekapKalender,
 };

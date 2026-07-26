@@ -110,6 +110,13 @@ const SesiAbsensi = () => {
   // Modal tambah absen (isi slot hilang sesi incomplete)
   const [addModal, setAddModal] = useState(null); // { sesi, direction, absen_time_local, status_absen, reason }
 
+  // Modal buat sesi baru + data picker
+  const [createModal, setCreateModal] = useState(null); // { user_id, retail_id, absen_type_id, absen_time_local, status_absen, reason }
+  const [userOptions, setUserOptions] = useState([]);
+  const [retailOptions, setRetailOptions] = useState([]);
+  const [masukTipeOptions, setMasukTipeOptions] = useState([]);
+  const [loadingPickers, setLoadingPickers] = useState(false);
+
   // Debounce search
   useEffect(() => {
     const t = setTimeout(() => setSearchDebounced(search.trim()), 400);
@@ -263,17 +270,81 @@ const SesiAbsensi = () => {
     setSavingAction(true);
     try {
       const absen_time = format(new Date(addModal.absen_time_local), "yyyy-MM-dd HH:mm:ss");
-      const payload = { absen_time, reason: addModal.reason };
+      const fd = new FormData();
+      fd.append("absen_time", absen_time);
+      fd.append("reason", addModal.reason || "");
       if (addModal.status_absen === "1" || addModal.status_absen === "2") {
-        payload.status_absen = Number(addModal.status_absen);
+        fd.append("status_absen", addModal.status_absen);
       }
+      if (addModal.photo) fd.append("photo_url", addModal.photo);
       const res = await axios.post(
         `${VITE_API_URL}/absensi/sesi/${addModal.sesi.sesi_id}/add-absen`,
-        payload,
+        fd,
         { headers: authHeaders() }
       );
       Swal.fire("Berhasil!", res.data?.message || "Absen ditambahkan.", "success");
       setAddModal(null);
+      fetchSesi();
+    } catch (error) {
+      Swal.fire("Error", error.response?.data?.message || error.message, "error");
+    } finally {
+      setSavingAction(false);
+    }
+  };
+
+  // Buat sesi baru: buka modal + fetch picker (user, retail, tipe masuk).
+  const openCreateModal = async () => {
+    setCreateModal({
+      user_id: "",
+      retail_id: "",
+      absen_type_id: "",
+      absen_time_local: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+      status_absen: "",
+      reason: "",
+    });
+    setLoadingPickers(true);
+    try {
+      const headers = authHeaders();
+      const [uRes, rRes, tRes] = await Promise.all([
+        axios.get(`${VITE_API_URL}/users`, { headers }),
+        axios.get(`${VITE_API_URL}/retail`, { headers }),
+        axios.get(`${VITE_API_URL}/absensi/tipe-absen?direction=masuk`, { headers }),
+      ]);
+      const uData = uRes.data?.data ?? uRes.data;
+      const rData = rRes.data?.data ?? rRes.data;
+      setUserOptions(Array.isArray(uData) ? uData : []);
+      setRetailOptions(Array.isArray(rData) ? rData : []);
+      setMasukTipeOptions(Array.isArray(tRes.data?.data) ? tRes.data.data : []);
+    } catch (error) {
+      Swal.fire("Error", error.response?.data?.message || error.message, "error");
+    } finally {
+      setLoadingPickers(false);
+    }
+  };
+
+  const submitCreate = async () => {
+    if (!createModal?.user_id || !createModal?.retail_id || !createModal?.absen_type_id || !createModal?.absen_time_local) {
+      Swal.fire("Error", "User, retail, shift, dan waktu wajib diisi.", "error");
+      return;
+    }
+    setSavingAction(true);
+    try {
+      const absen_time = format(new Date(createModal.absen_time_local), "yyyy-MM-dd HH:mm:ss");
+      const fd = new FormData();
+      fd.append("user_id", String(createModal.user_id));
+      fd.append("retail_id", String(createModal.retail_id));
+      fd.append("absen_type_id", String(createModal.absen_type_id));
+      fd.append("absen_time", absen_time);
+      fd.append("reason", createModal.reason || "");
+      if (createModal.status_absen === "1" || createModal.status_absen === "2") {
+        fd.append("status_absen", createModal.status_absen);
+      }
+      if (createModal.photo) fd.append("photo_url", createModal.photo);
+      const res = await axios.post(`${VITE_API_URL}/absensi/sesi/create`, fd, {
+        headers: authHeaders(),
+      });
+      Swal.fire("Berhasil!", res.data?.message || "Sesi dibuat.", "success");
+      setCreateModal(null);
       fetchSesi();
     } catch (error) {
       Swal.fire("Error", error.response?.data?.message || error.message, "error");
@@ -426,6 +497,9 @@ const SesiAbsensi = () => {
             Pasangkan absen masuk & keluar, kelola sesi incomplete/closed. Rentang: {start} s/d {end}
           </p>
         </div>
+        <button className="btn btn-gradient-primary" onClick={openCreateModal}>
+          <i className="mdi mdi-plus"></i> Buat Sesi Baru
+        </button>
       </div>
 
       {/* Toolbar filter */}
@@ -681,8 +755,20 @@ const SesiAbsensi = () => {
               />
             </div>
 
+            <div className="form-group" style={{ marginBottom: 12 }}>
+              <label style={{ fontWeight: 600, fontSize: 13 }}>
+                Foto <span style={{ fontWeight: 400, color: "#888" }}>(opsional)</span>
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                className="form-control"
+                onChange={(e) => setAddModal({ ...addModal, photo: e.target.files?.[0] || null })}
+              />
+            </div>
+
             <p style={{ fontSize: 11, color: "#90a4ae", margin: "0 0 12px" }}>
-              Absen ditandai input manual admin (tanpa foto/GPS). Sesi otomatis ditutup (closed).
+              Input manual admin. Lokasi tidak dicatat (none). Sesi otomatis ditutup (closed).
             </p>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
@@ -691,6 +777,159 @@ const SesiAbsensi = () => {
               </button>
               <button className="btn btn-gradient-primary" onClick={submitAdd} disabled={savingAction}>
                 {savingAction ? "Menyimpan..." : "Tambah & Tutup Sesi"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Buat Sesi Baru */}
+      {createModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 1000,
+          }}
+          onClick={() => setCreateModal(null)}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: 10,
+              padding: 20,
+              width: 460,
+              maxWidth: "94%",
+              maxHeight: "90vh",
+              overflowY: "auto",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h5 style={{ marginTop: 0 }}>Buat Sesi Baru (Absen Masuk)</h5>
+            <p style={{ fontSize: 12, color: "#90a4ae", margin: "0 0 14px" }}>
+              Buat sesi baru dengan absen masuk. Sesi berstatus <b>open</b> — isi absen keluar kemudian via tombol tambah absen.
+            </p>
+
+            {loadingPickers ? (
+              <p style={{ color: "#90a4ae" }}>Memuat data...</p>
+            ) : (
+              <>
+                <div className="form-group" style={{ marginBottom: 12 }}>
+                  <label style={{ fontWeight: 600, fontSize: 13 }}>Karyawan</label>
+                  <select
+                    className="form-control"
+                    value={createModal.user_id}
+                    onChange={(e) => setCreateModal({ ...createModal, user_id: e.target.value })}
+                  >
+                    <option value="">-- pilih karyawan --</option>
+                    {userOptions.map((u) => (
+                      <option key={u.user_id} value={String(u.user_id)}>
+                        {u.name} ({u.username})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 12 }}>
+                  <label style={{ fontWeight: 600, fontSize: 13 }}>Retail</label>
+                  <select
+                    className="form-control"
+                    value={createModal.retail_id}
+                    onChange={(e) => setCreateModal({ ...createModal, retail_id: e.target.value })}
+                  >
+                    <option value="">-- pilih retail --</option>
+                    {retailOptions.map((r) => (
+                      <option key={r.retail_id} value={String(r.retail_id)}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 12 }}>
+                  <label style={{ fontWeight: 600, fontSize: 13 }}>Shift (Tipe Masuk)</label>
+                  <select
+                    className="form-control"
+                    value={createModal.absen_type_id}
+                    onChange={(e) => setCreateModal({ ...createModal, absen_type_id: e.target.value })}
+                  >
+                    <option value="">-- pilih shift --</option>
+                    {masukTipeOptions.map((t) => (
+                      <option key={t.absen_id} value={String(t.absen_id)}>
+                        {t.name} — {t.description}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 12 }}>
+                  <label style={{ fontWeight: 600, fontSize: 13 }}>Waktu Masuk</label>
+                  <input
+                    type="datetime-local"
+                    className="form-control"
+                    value={createModal.absen_time_local}
+                    onChange={(e) => setCreateModal({ ...createModal, absen_time_local: e.target.value })}
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 12 }}>
+                  <label style={{ fontWeight: 600, fontSize: 13 }}>
+                    Status <span style={{ fontWeight: 400, color: "#888" }}>(kosong = otomatis)</span>
+                  </label>
+                  <select
+                    className="form-control"
+                    value={createModal.status_absen}
+                    onChange={(e) => setCreateModal({ ...createModal, status_absen: e.target.value })}
+                  >
+                    <option value="">Otomatis (dari jam)</option>
+                    <option value="1">Ontime</option>
+                    <option value="2">Telat</option>
+                  </select>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 14 }}>
+                  <label style={{ fontWeight: 600, fontSize: 13 }}>Catatan</label>
+                  <textarea
+                    className="form-control"
+                    rows={2}
+                    value={createModal.reason}
+                    onChange={(e) => setCreateModal({ ...createModal, reason: e.target.value })}
+                    placeholder="Alasan input manual..."
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 12 }}>
+                  <label style={{ fontWeight: 600, fontSize: 13 }}>
+                    Foto <span style={{ fontWeight: 400, color: "#888" }}>(opsional)</span>
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="form-control"
+                    onChange={(e) => setCreateModal({ ...createModal, photo: e.target.files?.[0] || null })}
+                  />
+                </div>
+
+                <p style={{ fontSize: 11, color: "#90a4ae", margin: "0 0 12px" }}>
+                  Input manual admin. Lokasi tidak dicatat (none).
+                </p>
+              </>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button className="btn btn-light" onClick={() => setCreateModal(null)} disabled={savingAction}>
+                Batal
+              </button>
+              <button
+                className="btn btn-gradient-primary"
+                onClick={submitCreate}
+                disabled={savingAction || loadingPickers}
+              >
+                {savingAction ? "Menyimpan..." : "Buat Sesi"}
               </button>
             </div>
           </div>
