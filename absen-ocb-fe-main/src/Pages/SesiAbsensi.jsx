@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import DataTable from "react-data-table-component";
+import Select from "react-select";
 import Swal from "sweetalert2";
 import { format } from "date-fns";
 
@@ -853,59 +854,95 @@ const SesiAbsensi = () => {
               <>
                 <div className="form-group" style={{ marginBottom: 12 }}>
                   <label style={{ fontWeight: 600, fontSize: 13 }}>Karyawan</label>
-                  <select
-                    className="form-control"
-                    value={createModal.user_id}
-                    onChange={(e) => onCreateUserChange(e.target.value)}
-                  >
-                    <option value="">-- pilih karyawan --</option>
-                    {userOptions.map((u) => (
-                      <option key={u.user_id} value={String(u.user_id)}>
-                        {u.name} ({u.username})
-                      </option>
-                    ))}
-                  </select>
+                  <Select
+                    options={userOptions.map((u) => ({
+                      value: String(u.user_id),
+                      label: `${u.name} (${u.username})`,
+                    }))}
+                    value={
+                      createModal.user_id
+                        ? {
+                            value: createModal.user_id,
+                            label:
+                              userOptions
+                                .filter((u) => String(u.user_id) === createModal.user_id)
+                                .map((u) => `${u.name} (${u.username})`)[0] || "",
+                          }
+                        : null
+                    }
+                    onChange={(opt) => onCreateUserChange(opt ? opt.value : "")}
+                    placeholder="Cari nama / username..."
+                    isClearable
+                    menuPortalTarget={document.body}
+                    styles={{ menuPortal: (base) => ({ ...base, zIndex: 1100 }) }}
+                  />
                 </div>
 
                 <div className="form-group" style={{ marginBottom: 12 }}>
                   <label style={{ fontWeight: 600, fontSize: 13 }}>Retail</label>
-                  <select
-                    className="form-control"
-                    value={createModal.retail_id}
-                    onChange={(e) => setCreateModal({ ...createModal, retail_id: e.target.value })}
-                  >
-                    <option value="">-- pilih retail --</option>
-                    {retailOptions.map((r) => (
-                      <option key={r.retail_id} value={String(r.retail_id)}>
-                        {r.name}
-                      </option>
-                    ))}
-                  </select>
+                  <Select
+                    options={retailOptions.map((r) => ({
+                      value: String(r.retail_id),
+                      label: r.name,
+                    }))}
+                    value={
+                      createModal.retail_id
+                        ? {
+                            value: createModal.retail_id,
+                            label:
+                              retailOptions
+                                .filter((r) => String(r.retail_id) === createModal.retail_id)
+                                .map((r) => r.name)[0] || "",
+                          }
+                        : null
+                    }
+                    onChange={(opt) =>
+                      setCreateModal({ ...createModal, retail_id: opt ? opt.value : "" })
+                    }
+                    placeholder="Cari retail..."
+                    isClearable
+                    menuPortalTarget={document.body}
+                    styles={{ menuPortal: (base) => ({ ...base, zIndex: 1100 }) }}
+                  />
                 </div>
 
                 <div className="form-group" style={{ marginBottom: 12 }}>
                   <label style={{ fontWeight: 600, fontSize: 13 }}>Shift (Tipe Masuk)</label>
-                  <select
-                    className="form-control"
-                    value={createModal.absen_type_id}
-                    disabled={!createModal.user_id || loadingUserShift}
-                    onChange={(e) => setCreateModal({ ...createModal, absen_type_id: e.target.value })}
-                  >
-                    <option value="">
-                      {!createModal.user_id
-                        ? "-- pilih karyawan dulu --"
+                  <Select
+                    options={masukTipeOptions.map((t) => ({
+                      value: String(t.absen_id),
+                      label: `${t.name} — ${t.description}`,
+                    }))}
+                    value={
+                      createModal.absen_type_id
+                        ? {
+                            value: createModal.absen_type_id,
+                            label:
+                              masukTipeOptions
+                                .filter((t) => String(t.absen_id) === createModal.absen_type_id)
+                                .map((t) => `${t.name} — ${t.description}`)[0] || "",
+                          }
+                        : null
+                    }
+                    onChange={(opt) =>
+                      setCreateModal({ ...createModal, absen_type_id: opt ? opt.value : "" })
+                    }
+                    isDisabled={!createModal.user_id || loadingUserShift}
+                    isLoading={loadingUserShift}
+                    isClearable
+                    placeholder={
+                      !createModal.user_id
+                        ? "Pilih karyawan dulu"
                         : loadingUserShift
-                        ? "memuat shift..."
+                        ? "Memuat shift..."
                         : masukTipeOptions.length === 0
-                        ? "-- tak ada shift ter-assign --"
-                        : "-- pilih shift --"}
-                    </option>
-                    {masukTipeOptions.map((t) => (
-                      <option key={t.absen_id} value={String(t.absen_id)}>
-                        {t.name} — {t.description}
-                      </option>
-                    ))}
-                  </select>
+                        ? "Tak ada shift ter-assign"
+                        : "Cari shift..."
+                    }
+                    noOptionsMessage={() => "Tak ada shift ter-assign"}
+                    menuPortalTarget={document.body}
+                    styles={{ menuPortal: (base) => ({ ...base, zIndex: 1100 }) }}
+                  />
                 </div>
 
                 <div className="form-group" style={{ marginBottom: 12 }}>
