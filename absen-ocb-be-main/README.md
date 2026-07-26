@@ -72,6 +72,7 @@ node src/index.js
 > - **Non-jadwal:** tipe lembur = PAGI saja, wajib absen regular hari ini komplit dulu.
 > - **Jadwal-harian:** tipe lembur = kategori KOMPLEMEN shift yang di-assign hari ini (assigned SUBUH → Pagi+Sore; Sore → Pagi+Subuh; Pagi → Sore+Subuh). Boleh lembur sebelum/sesudah shift regular, diblokir hanya saat sedang menjalani shift regular (sesi regular open).
 > - **Batas jam lembur masuk:** sama dgn regular jadwal-harian — hanya boleh 1 jam sebelum `start_time` tipe (mis. SORE masuk 15:00 → mulai 14:00). Gantikan filter window lama.
+> - **Tipe keluar sesi lembur open:** tipe KELUAR pasangan (match by `name`) dari sesi lembur `open` SELALU disertakan (`getOpenLemburKeluarTypes`), walau jadwal hari ini belum di-assign atau kategorinya dibuang filter komplemen — agar sesi lembur berjalan (termasuk cross-date, masuk kemarin) selalu bisa ditutup.
 
 ### Jadwal Shift Harian
 > **Aktivasi:** User masuk jalur jadwal harian bila punya shifting aktif hari ini (`start_date <= today <= end_date`) dengan flag `uses_jadwal_harian=1`. Set flag via toggle di halaman Shift. (Sebelumnya hardcode `category_user IN (18,21)`.)

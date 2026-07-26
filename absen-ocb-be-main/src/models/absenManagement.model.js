@@ -224,6 +224,12 @@ const getTypeAbsenByJadwal = async (userId) => {
 const getLemburTypes = async (userId) => {
   const isJadwalHarian = await userUsesJadwalHarian(userId);
 
+  // Tipe KELUAR untuk sesi LEMBUR yang masih open (mis. lembur SUBUH masuk 23:42
+  // kemarin, keluar 08:00 hari ini). Wajib disertakan walau jadwal hari ini kosong
+  // atau kategorinya kebetulan dibuang filter komplemen — else user tak bisa
+  // menutup sesi lembur yang sedang berjalan.
+  const openLemburKeluar = await getOpenLemburKeluarTypes(userId);
+
   let assignedKategori = null;
   if (isJadwalHarian) {
     const [jrows] = await dbpool.query(
@@ -236,9 +242,9 @@ const getLemburTypes = async (userId) => {
     );
     assignedKategori = jrows.length > 0 ? jrows[0].kategori_absen : null;
     // Jadwal-harian tapi belum di-assign hari ini → komplemen tak terdefinisi,
-    // tak ada lembur (return kosong).
+    // tak ada lembur baru. Tetap kembalikan tipe keluar sesi lembur yang open.
     if (!assignedKategori) {
-      return [[]];
+      return [openLemburKeluar];
     }
   }
 
@@ -273,7 +279,42 @@ const getLemburTypes = async (userId) => {
   const params = isJadwalHarian
     ? [assignedKategori, userId, userId]
     : [userId, userId];
-  return dbpool.execute(SQLQuery, params);
+  const [rows] = await dbpool.execute(SQLQuery, params);
+
+  // Gabung tipe keluar sesi lembur open (dedup by absen_id).
+  const seen = new Set(rows.map((r) => r.absen_id));
+  const merged = [...rows];
+  for (const r of openLemburKeluar) {
+    if (!seen.has(r.absen_id)) {
+      seen.add(r.absen_id);
+      merged.push(r);
+    }
+  }
+  return [merged];
+};
+
+// Tipe KELUAR pasangan (match by name) dari sesi LEMBUR yang masih open.
+// Dipakai agar user selalu bisa menutup sesi lembur berjalan, termasuk lembur
+// cross-date (masuk kemarin) atau saat jadwal hari ini belum di-assign.
+const getOpenLemburKeluarTypes = async (userId) => {
+  const SQLQuery = `
+    SELECT DISTINCT
+      tk.absen_id, tk.name, tk.description, tk.kategori_absen,
+      tk.start_time, tk.end_time,
+      r.retail_id, r.name AS retail_name,
+      r.latitude, r.longitude, r.radius
+    FROM absensi_sesi s
+    JOIN absensi am ON am.absensi_id = s.masuk_absensi_id
+    JOIN tipe_absen tm ON tm.absen_id = am.absen_type_id
+    JOIN tipe_absen tk ON tk.name = tm.name AND tk.is_deleted = 0
+      AND (LOWER(tk.description) LIKE '%keluar%' OR LOWER(tk.description) LIKE '%pulang%')
+    LEFT JOIN retail r ON r.retail_id = s.retail_id
+    WHERE s.user_id = ?
+      AND s.is_lembur = 1
+      AND s.status = 'open'
+      AND s.keluar_absensi_id IS NULL`;
+  const [rows] = await dbpool.execute(SQLQuery, [userId]);
+  return rows;
 };
 
 // User dianggap pakai jalur jadwal harian bila punya shifting aktif hari ini
