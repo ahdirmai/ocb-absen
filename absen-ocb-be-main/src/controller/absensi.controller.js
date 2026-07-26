@@ -1383,8 +1383,10 @@ const addAbsenToSesi = async (req, res) => {
         is_approval: 0,
         is_lembur: sesi.is_lembur,
       };
-      // Foto opsional (upload.single('photo_url')); fallback placeholder. Lokasi none.
-      const imageUrl = req.file?.filename || "manual-admin";
+      // Foto opsional (upload.single('photo_url')); kosong bila tak diunggah. Lokasi none.
+      // Format path samakan dgn absen normal: "/assets/<filename>" (FE render
+      // `${VITE_API_IMAGE}${photo_url}`, static mount di /assets).
+      const imageUrl = req.file?.filename ? `/assets/${req.file.filename}` : "";
       const result = await absensiModel.createAbsensi(
         insertBody,
         imageUrl,
@@ -1517,8 +1519,9 @@ const createNewSesi = async (req, res) => {
         is_approval: 0,
         is_lembur: lembur,
       };
-      // Foto opsional; fallback placeholder. Lokasi none.
-      const imageUrl = req.file?.filename || "manual-admin";
+      // Foto opsional; kosong bila tak diunggah. Lokasi none.
+      // Format path samakan dgn absen normal: "/assets/<filename>".
+      const imageUrl = req.file?.filename ? `/assets/${req.file.filename}` : "";
       const result = await absensiModel.createAbsensi(
         insertBody, imageUrl, status_absen, 2, adminId, timeAbsenFull, potongan, 1, conn
       );
