@@ -107,6 +107,9 @@ const SesiAbsensi = () => {
   // Modal edit status
   const [statusModal, setStatusModal] = useState(null); // { sesi_id, status }
 
+  // Modal tambah absen (isi slot hilang sesi incomplete)
+  const [addModal, setAddModal] = useState(null); // { sesi, direction, absen_time_local, status_absen, reason }
+
   // Debounce search
   useEffect(() => {
     const t = setTimeout(() => setSearchDebounced(search.trim()), 400);
@@ -238,6 +241,47 @@ const SesiAbsensi = () => {
     }
   };
 
+  // Tambah absen bagian hilang (masuk/keluar) pada sesi incomplete.
+  const openAddModal = (row) => {
+    const direction = row.masuk_absensi_id == null ? "masuk" : "keluar";
+    // Prefill jam: pakai tanggal sesi + jam default kosong.
+    const base = row.tanggal ? new Date(row.tanggal) : new Date();
+    setAddModal({
+      sesi: row,
+      direction,
+      absen_time_local: format(base, "yyyy-MM-dd'T'HH:mm"),
+      status_absen: "",
+      reason: "",
+    });
+  };
+
+  const submitAdd = async () => {
+    if (!addModal?.absen_time_local) {
+      Swal.fire("Error", "Waktu absen wajib diisi.", "error");
+      return;
+    }
+    setSavingAction(true);
+    try {
+      const absen_time = format(new Date(addModal.absen_time_local), "yyyy-MM-dd HH:mm:ss");
+      const payload = { absen_time, reason: addModal.reason };
+      if (addModal.status_absen === "1" || addModal.status_absen === "2") {
+        payload.status_absen = Number(addModal.status_absen);
+      }
+      const res = await axios.post(
+        `${VITE_API_URL}/absensi/sesi/${addModal.sesi.sesi_id}/add-absen`,
+        payload,
+        { headers: authHeaders() }
+      );
+      Swal.fire("Berhasil!", res.data?.message || "Absen ditambahkan.", "success");
+      setAddModal(null);
+      fetchSesi();
+    } catch (error) {
+      Swal.fire("Error", error.response?.data?.message || error.message, "error");
+    } finally {
+      setSavingAction(false);
+    }
+  };
+
   const handleDelete = async (row) => {
     const ok = await Swal.fire({
       title: "Hapus sesi?",
@@ -350,6 +394,13 @@ const SesiAbsensi = () => {
         <div style={{ display: "flex" }}>
           {row.status === "incomplete" &&
             iconBtn("#00897b", "Match pasangan", () => openMatchModal(row), "mdi-link-variant")}
+          {row.status === "incomplete" &&
+            iconBtn(
+              "#43a047",
+              `Tambah absen ${row.masuk_absensi_id == null ? "masuk" : "keluar"}`,
+              () => openAddModal(row),
+              "mdi-plus-circle"
+            )}
           {row.status === "closed" &&
             iconBtn("#f57c00", "Unmatch (pisah)", () => handleUnmatch(row), "mdi-link-variant-off")}
           {iconBtn(
@@ -563,6 +614,83 @@ const SesiAbsensi = () => {
               </button>
               <button className="btn btn-gradient-primary" onClick={submitStatus} disabled={savingAction}>
                 {savingAction ? "Menyimpan..." : "Simpan"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Tambah Absen */}
+      {addModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 1000,
+          }}
+          onClick={() => setAddModal(null)}
+        >
+          <div
+            style={{ background: "#fff", borderRadius: 10, padding: 20, width: 420, maxWidth: "92%" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h5 style={{ marginTop: 0 }}>
+              Tambah Absen {addModal.direction === "masuk" ? "Masuk" : "Keluar"}
+            </h5>
+            <p style={{ fontSize: 13, color: "#666", margin: "0 0 12px" }}>
+              {addModal.sesi.nama_karyawan} — {addModal.sesi.shift_name || "-"} · Sesi #{addModal.sesi.sesi_id}
+            </p>
+
+            <div className="form-group" style={{ marginBottom: 12 }}>
+              <label style={{ fontWeight: 600, fontSize: 13 }}>Waktu Absen</label>
+              <input
+                type="datetime-local"
+                className="form-control"
+                value={addModal.absen_time_local}
+                onChange={(e) => setAddModal({ ...addModal, absen_time_local: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group" style={{ marginBottom: 12 }}>
+              <label style={{ fontWeight: 600, fontSize: 13 }}>
+                Status <span style={{ fontWeight: 400, color: "#888" }}>(kosong = otomatis)</span>
+              </label>
+              <select
+                className="form-control"
+                value={addModal.status_absen}
+                onChange={(e) => setAddModal({ ...addModal, status_absen: e.target.value })}
+              >
+                <option value="">Otomatis (dari jam)</option>
+                <option value="1">Ontime</option>
+                <option value="2">Telat</option>
+              </select>
+            </div>
+
+            <div className="form-group" style={{ marginBottom: 16 }}>
+              <label style={{ fontWeight: 600, fontSize: 13 }}>Catatan</label>
+              <textarea
+                className="form-control"
+                rows={2}
+                value={addModal.reason}
+                onChange={(e) => setAddModal({ ...addModal, reason: e.target.value })}
+                placeholder="Alasan input manual..."
+              />
+            </div>
+
+            <p style={{ fontSize: 11, color: "#90a4ae", margin: "0 0 12px" }}>
+              Absen ditandai input manual admin (tanpa foto/GPS). Sesi otomatis ditutup (closed).
+            </p>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button className="btn btn-light" onClick={() => setAddModal(null)} disabled={savingAction}>
+                Batal
+              </button>
+              <button className="btn btn-gradient-primary" onClick={submitAdd} disabled={savingAction}>
+                {savingAction ? "Menyimpan..." : "Tambah & Tutup Sesi"}
               </button>
             </div>
           </div>

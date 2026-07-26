@@ -54,6 +54,7 @@ node src/index.js
 | POST | `/api/absensi/sesi/match` | Gabung 2 incomplete (`masuk_sesi_id`+`keluar_sesi_id`) → closed |
 | POST | `/api/absensi/sesi/:sesiId/unmatch` | Pisah closed → 2 incomplete |
 | POST | `/api/absensi/sesi/:sesiId/status` | Ubah status sesi manual |
+| POST | `/api/absensi/sesi/:sesiId/add-absen` | Tambah absen bagian hilang (isi slot + close) |
 | POST | `/api/absensi/sesi/:sesiId/delete` | Hapus 1 sesi |
 
 > **Validasi radius:** Absen ditolak (HTTP 400) jika lokasi GPS di luar `radius` retail. Hanya aktif bila retail punya `latitude`, `longitude`, dan `radius`. Pengecualian: jika di luar radius retail asal tapi masih dalam radius OC/Store lain yang aktif, absen diizinkan dengan `is_approval=1`.
@@ -64,7 +65,7 @@ node src/index.js
 
 > **Koreksi Absen (admin):** Admin ubah `absen_time`/`status_absen`/`reason`/**`absen_type_id`** 1 baris. Sistem recompute `status_absen` (ontime/telat vs `end_time` tipe baru) + `potongan` (telat >15mnt) dari waktu baru — kecuali admin override status eksplisit. Ganti tipe wajib **searah** (masuk↔masuk / keluar↔keluar; beda arah → HTTP 400). Bila baris = `masuk_absensi_id` sesi & jam geser tanggal → `absensi_sesi.tanggal` ikut update; bila tipe berganti → `absensi_sesi.kategori_absen` disinkron ke kategori tipe baru (cegah sesi pecah). Audit `updated_by`/`updated_at` + `log_activity` (old→new). Transaksional. Retail tak diubah.
 
-> **Kelola Sesi Absensi (admin):** Page `/sesi-absensi` view + manage `absensi_sesi`. **Match** dua sesi incomplete (1 masuk-only + 1 keluar-only, user+shift+is_lembur sama, window 20h) → 1 `closed` (isi keluar ke masuk-sesi, hapus keluar-orphan). **Unmatch** `closed` → 2 incomplete. **Ubah status** manual + **hapus** sesi. `candidates` endpoint sarankan pasangan; flag `has_candidate` di list highlight orphan berpasangan. Semua transaksional + audit `log_activity`. Baris `absensi` tak tersentuh (hanya `absensi_sesi`).
+> **Kelola Sesi Absensi (admin):** Page `/sesi-absensi` view + manage `absensi_sesi`. **Match** dua sesi incomplete (1 masuk-only + 1 keluar-only, user+shift+is_lembur sama, window 20h) → 1 `closed` (isi keluar ke masuk-sesi, hapus keluar-orphan). **Unmatch** `closed` → 2 incomplete. **Tambah absen** bagian hilang: sesi incomplete → insert `absensi` manual (foto/GPS placeholder `manual-admin`/0, `reason` +`[input manual admin]`, `is_valid=1`, approved), recompute `status_absen`/`potongan` dari jam vs `end_time` tipe (override boleh), isi slot + `closed`. Tipe di-resolve dari shift name arah slot hilang (atau kirim `absen_type_id`). **Ubah status** manual + **hapus** sesi. `candidates` endpoint sarankan pasangan; flag `has_candidate` di list highlight orphan berpasangan. Semua transaksional + audit `log_activity` (label aksi di `dataquery`; kolom `action` = enum INSERT/UPDATE/DELETE). Match/unmatch/status/delete tak menyentuh baris `absensi`; add-absen menambah 1 baris `absensi`.
 
 > **Lembur (Sales Toko):** User bisa lembur (gantikan karyawan toko lain) pakai tipe shift beda, pilih OC → submit → `is_lembur=1` + approval. Trainee dikecualikan.
 > - **Non-jadwal:** tipe lembur = PAGI saja, wajib absen regular hari ini komplit dulu.

@@ -112,6 +112,29 @@ const getTipeAbsenByDirection = async (direction) => {
     return rows;
 }
 
+// Tipe absen 1 arah (masuk/keluar) untuk shift name tertentu. Dipakai saat admin
+// tambah absen bagian hilang di sesi incomplete (resolve tipe lawan-arah pasangan).
+const getTipeByNameDirection = async (name, direction) => {
+    if (!name) return null;
+    const dir = String(direction || "").toLowerCase();
+    let cond;
+    if (dir === "keluar") {
+        cond = "(LOWER(description) LIKE '%keluar%' OR LOWER(description) LIKE '%pulang%')";
+    } else if (dir === "masuk") {
+        cond = "LOWER(description) LIKE '%masuk%'";
+    } else {
+        return null;
+    }
+    const [rows] = await dbpool.query(
+        `SELECT absen_id, name, description, start_time, end_time, kategori_absen, is_cross_date
+         FROM tipe_absen
+         WHERE name = ? AND is_deleted = 0 AND ${cond}
+         ORDER BY absen_id LIMIT 1`,
+        [name, ]
+    );
+    return rows.length ? rows[0] : null;
+}
+
 const getPotonganLate = async (idPotongan) => {
     const [potongan] = await dbpool.query('SELECT value FROM potongan WHERE id = ? ', [idPotongan]);
     return potongan[0];
@@ -573,6 +596,7 @@ module.exports={
     getKeluarStartTimeByName,
     getKeluarKategoriByName,
     getTipeAbsenByDirection,
+    getTipeByNameDirection,
     getUpline,
     approveAbsen,
     rejectAbsen,

@@ -461,6 +461,17 @@ const unmatchSesi = async (conn, sesiId, updatedAt = null) => {
   return { sesiId, newKeluarSesiId };
 };
 
+// Isi slot sesi yang kosong (masuk/keluar) dgn absensi_id baru + set closed.
+// direction 'masuk'|'keluar'. Dipakai saat admin tambah absen bagian hilang.
+const fillSesiSlot = async (conn, sesiId, direction, absensiId, updatedAt = null) => {
+  const col = direction === "keluar" ? "keluar_absensi_id" : "masuk_absensi_id";
+  const [result] = await conn.query(
+    `UPDATE absensi_sesi SET ${col} = ?, status = 'closed', updated_at = ? WHERE sesi_id = ?`,
+    [absensiId, updatedAt, sesiId]
+  );
+  return result;
+};
+
 // Set status manual (enum guard).
 const updateSesiStatus = async (conn, sesiId, status, updatedAt = null) => {
   const allowed = ["open", "closed", "incomplete"];
@@ -500,6 +511,7 @@ module.exports = {
   findMatchCandidates,
   matchSesi,
   unmatchSesi,
+  fillSesiSlot,
   updateSesiStatus,
   deleteSesi,
 };

@@ -35,6 +35,7 @@ router.post('/sesi/match', authenticateToken, absensiController.matchSesiAbsensi
 router.get('/sesi/:sesiId/candidates', authenticateToken, absensiController.getSesiCandidates);
 router.post('/sesi/:sesiId/unmatch', authenticateToken, absensiController.unmatchSesiAbsensi);
 router.post('/sesi/:sesiId/status', authenticateToken, absensiController.updateSesiAbsensi);
+router.post('/sesi/:sesiId/add-absen', authenticateToken, absensiController.addAbsenToSesi);
 router.post('/sesi/:sesiId/delete', authenticateToken, absensiController.deleteSesiAbsensi);
 
 router.post('/koreksi/:absenId', authenticateToken, absensiController.koreksiAbsen);
