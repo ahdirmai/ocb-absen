@@ -91,6 +91,27 @@ const getKeluarKategoriByName = async (name) => {
     return rows.length > 0 ? rows[0].kategori_absen : null;
 }
 
+// Daftar tipe absen per arah (masuk/keluar) untuk dropdown koreksi. Filter arah
+// via description (selaras getAbsenDirection FE). Hanya tipe aktif (is_deleted=0).
+const getTipeAbsenByDirection = async (direction) => {
+    const dir = String(direction || "").toLowerCase();
+    let cond;
+    if (dir === "keluar") {
+        cond = "(LOWER(description) LIKE '%keluar%' OR LOWER(description) LIKE '%pulang%')";
+    } else if (dir === "masuk") {
+        cond = "LOWER(description) LIKE '%masuk%'";
+    } else {
+        return [];
+    }
+    const [rows] = await dbpool.query(
+        `SELECT absen_id, name, description, start_time, end_time, kategori_absen, is_cross_date
+         FROM tipe_absen
+         WHERE is_deleted = 0 AND ${cond}
+         ORDER BY name, absen_id`
+    );
+    return rows;
+}
+
 const getPotonganLate = async (idPotongan) => {
     const [potongan] = await dbpool.query('SELECT value FROM potongan WHERE id = ? ', [idPotongan]);
     return potongan[0];
@@ -125,11 +146,11 @@ const getAbsensiById = async (absenId) => {
 // Koreksi absen (transaksional). Update jam/status/potongan/reason + audit.
 // conn = koneksi transaksi (atomic dgn sinkron sesi). Log old->new ke log_activity.
 const koreksiAbsen = async (conn, absenId, fields, adminId, oldRow) => {
-    const { absen_time, status_absen, potongan, reason, updated_at } = fields;
+    const { absen_time, status_absen, potongan, reason, updated_at, absen_type_id } = fields;
     const query = `UPDATE absensi
-        SET absen_time = ?, status_absen = ?, potongan = ?, reason = ?, updated_by = ?, updated_at = ?
+        SET absen_time = ?, status_absen = ?, potongan = ?, reason = ?, absen_type_id = ?, updated_by = ?, updated_at = ?
         WHERE absensi_id = ?`;
-    const values = [absen_time, status_absen, potongan, reason, adminId, updated_at, absenId];
+    const values = [absen_time, status_absen, potongan, reason, absen_type_id, adminId, updated_at, absenId];
     const [result] = await conn.query(query, values);
 
     // Audit old->new ke log_activity (kolom timestamp default CURRENT_TIMESTAMP).
@@ -140,8 +161,9 @@ const koreksiAbsen = async (conn, absenId, fields, adminId, oldRow) => {
             status_absen: oldRow?.status_absen,
             potongan: oldRow?.potongan,
             reason: oldRow?.reason,
+            absen_type_id: oldRow?.absen_type_id,
         },
-        new: { absen_time, status_absen, potongan, reason },
+        new: { absen_time, status_absen, potongan, reason, absen_type_id },
     });
     await conn.query(
         `INSERT INTO log_activity (table_name, action, dataquery, user_id) VALUES (?, ?, ?, ?)`,
@@ -550,6 +572,7 @@ module.exports={
     getTimeDB,
     getKeluarStartTimeByName,
     getKeluarKategoriByName,
+    getTipeAbsenByDirection,
     getUpline,
     approveAbsen,
     rejectAbsen,

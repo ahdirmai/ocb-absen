@@ -47,7 +47,14 @@ node src/index.js
 | POST | `/api/absensi/approve-absensi/:absenId` | Approve absensi |
 | POST | `/api/absensi/reject-absensi/:absenId` | Reject absensi |
 | POST | `/api/absensi/validasi/:absenId` | Validasi absensi |
-| POST | `/api/absensi/koreksi/:absenId` | Koreksi jam/status/catatan (recompute potongan + audit) |
+| POST | `/api/absensi/koreksi/:absenId` | Koreksi jam/status/catatan/**tipe** (recompute potongan + audit) |
+| GET | `/api/absensi/tipe-absen?direction=masuk\|keluar` | Daftar tipe absen per arah (dropdown koreksi) |
+| GET | `/api/absensi/sesi` | List sesi paginated + filter (`status`,`start_date`,`end_date`,`search`,`user_id`,`retail_id`,`kategori`,`page`,`limit`) |
+| GET | `/api/absensi/sesi/:sesiId/candidates` | Kandidat pasangan match untuk sesi incomplete |
+| POST | `/api/absensi/sesi/match` | Gabung 2 incomplete (`masuk_sesi_id`+`keluar_sesi_id`) → closed |
+| POST | `/api/absensi/sesi/:sesiId/unmatch` | Pisah closed → 2 incomplete |
+| POST | `/api/absensi/sesi/:sesiId/status` | Ubah status sesi manual |
+| POST | `/api/absensi/sesi/:sesiId/delete` | Hapus 1 sesi |
 
 > **Validasi radius:** Absen ditolak (HTTP 400) jika lokasi GPS di luar `radius` retail. Hanya aktif bila retail punya `latitude`, `longitude`, dan `radius`. Pengecualian: jika di luar radius retail asal tapi masih dalam radius OC/Store lain yang aktif, absen diizinkan dengan `is_approval=1`.
 
@@ -55,7 +62,9 @@ node src/index.js
 
 > **Window absen masuk (semua jalur):** Absen masuk hanya boleh dalam window: paling awal **1 jam sebelum** `start_time`, paling akhir **sebelum jam pulang** shift (= `start_time` tipe KELUAR pasangan, match by `name`). Lewat batas → HTTP 400. Cross-date (`is_cross_date=1`, keluar besok) tak kena batas atas. Ex: PAGI masuk 08:00 pulang 17:00 → masuk hanya 07:00–16:59. Berlaku jadwal-harian, lembur, DAN non-jadwal (retail biasa). Enforcement BE.
 
-> **Koreksi Absen (admin):** Admin ubah `absen_time`/`status_absen`/`reason` 1 baris. Sistem recompute `status_absen` (ontime/telat vs `end_time`) + `potongan` (telat >15mnt) dari waktu baru — kecuali admin override status eksplisit. Bila baris = `masuk_absensi_id` sesi & jam geser tanggal → `absensi_sesi.tanggal` ikut update. Audit `updated_by`/`updated_at` + `log_activity` (old→new). Transaksional. Tipe absen & retail tak diubah.
+> **Koreksi Absen (admin):** Admin ubah `absen_time`/`status_absen`/`reason`/**`absen_type_id`** 1 baris. Sistem recompute `status_absen` (ontime/telat vs `end_time` tipe baru) + `potongan` (telat >15mnt) dari waktu baru — kecuali admin override status eksplisit. Ganti tipe wajib **searah** (masuk↔masuk / keluar↔keluar; beda arah → HTTP 400). Bila baris = `masuk_absensi_id` sesi & jam geser tanggal → `absensi_sesi.tanggal` ikut update; bila tipe berganti → `absensi_sesi.kategori_absen` disinkron ke kategori tipe baru (cegah sesi pecah). Audit `updated_by`/`updated_at` + `log_activity` (old→new). Transaksional. Retail tak diubah.
+
+> **Kelola Sesi Absensi (admin):** Page `/sesi-absensi` view + manage `absensi_sesi`. **Match** dua sesi incomplete (1 masuk-only + 1 keluar-only, user+shift+is_lembur sama, window 20h) → 1 `closed` (isi keluar ke masuk-sesi, hapus keluar-orphan). **Unmatch** `closed` → 2 incomplete. **Ubah status** manual + **hapus** sesi. `candidates` endpoint sarankan pasangan; flag `has_candidate` di list highlight orphan berpasangan. Semua transaksional + audit `log_activity`. Baris `absensi` tak tersentuh (hanya `absensi_sesi`).
 
 > **Lembur (Sales Toko):** User bisa lembur (gantikan karyawan toko lain) pakai tipe shift beda, pilih OC → submit → `is_lembur=1` + approval. Trainee dikecualikan.
 > - **Non-jadwal:** tipe lembur = PAGI saja, wajib absen regular hari ini komplit dulu.

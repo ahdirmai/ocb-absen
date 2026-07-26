@@ -22,6 +22,7 @@ import AbsenKaryawan from "./Pages/AbsenKaryawan";
 import SalaryKpi from "./Pages/SalaryKpi";
 import RekapKalender from "./Pages/RekapKalender";
 import JadwalHarian from "./Pages/JadwalHarian";
+import SesiAbsensi from "./Pages/SesiAbsensi";
 function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const toggleSidebar = () => {
@@ -64,6 +65,7 @@ function App() {
                     <Route path="/profile" element={<Profile />} />
                     <Route path="/rekap-kalender" element={<RekapKalender />} />
                     <Route path="/jadwal-harian" element={<JadwalHarian />} />
+                    <Route path="/sesi-absensi" element={<SesiAbsensi />} />
                   </Routes>
                 </div>
               </div>

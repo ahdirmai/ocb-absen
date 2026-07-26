@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### Added
+- **Page baru "Kelola Sesi Absensi"** (`SesiAbsensi.jsx`, `/sesi-absensi`) — admin view + manage `absensi_sesi` (pairing masuk↔keluar) via UI, gantikan kerja manual `scripts/fix-cross-date-sesi.js`.
+  - View: DataTable server-side pagination (65k+ baris), filter status (default incomplete) + rentang **per-hari/minggu/bulan** (default hari) + cari karyawan. Kolom masuk/keluar jam+shift, badge status berwarna, badge Lembur, penanda "ada pasangan".
+  - BE list (`absensiSesi.model.js listSesi`/`countSesi`): JOIN user+retail+tipe_absen (masuk & keluar), flag `has_candidate` (EXISTS sesi incomplete lawan-arah user+shift+is_lembur sama, window 20h) untuk highlight orphan berpasangan.
+  - Aksi: **Match** (gabung 2 incomplete → closed; `findMatchCandidates` sarankan pasangan by shift name+window, `matchSesi` set keluar + hapus orphan), **Unmatch** (closed → 2 incomplete, `unmatchSesi`), **Ubah status** manual (`updateSesiStatus`), **Hapus** sesi (`deleteSesi`). Semua transaksional + audit `log_activity` (action MATCH/UNMATCH/UPDATE_STATUS/DELETE).
+  - Endpoint (`routes/absensi.js`): `GET /api/absensi/sesi`, `GET /sesi/:id/candidates`, `POST /sesi/match`, `POST /sesi/:id/unmatch`, `POST /sesi/:id/status`, `POST /sesi/:id/delete`.
+- **Ubah tipe absen di Koreksi Absen** (`Absensi.jsx` modal + `absensi.controller.js koreksiAbsen`) — admin bisa ganti `absen_type_id` 1 baris (dulu di luar scope). Dropdown tipe difilter **searah** baris (`GET /api/absensi/tipe-absen?direction=masuk|keluar`, `getTipeAbsenByDirection`).
+  - Recompute `status_absen` + `potongan` dari window tipe BARU (admin tetap boleh override status). Guard arah: tolak 400 bila ubah masuk↔keluar.
+  - Sinkron `absensi_sesi.kategori_absen` ke kategori tipe baru (fallback `getKeluarKategoriByName`) — cegah sesi pecah. Audit old→new (+`absen_type_id`) ke `log_activity`.
 - **Android app web-parity (layar attempt absen)** (`absen-ocb-apps-main`, native Java) — port logika keputusan dari web `AbsenKaryawan.jsx`. Home & History tak disentuh.
   - `AbsenLogic.java` (baru): ~15 helper port dari web (direction, isSameLocalDate, isRejected, cross-date deadline+grace 3h, findOpenRegularMasuk, buildTodayAttendanceStatus, nextRegularDirection, attendanceMode, hasTodayForTimeCategory, checkEarlyMasuk window 60mnt, haversine). `HistoryItem.java` (baru): model history dgn sesi_status/sesi_direction/is_lembur/is_cross_date/keluar_start_time.
   - `AbsensiActivity`: fetch berantai history→shift-user→lembur-types→retail; arah-aware (tampilkan hanya tipe arah berikutnya masuk/keluar, cross-date SUBUH diarahkan keluar); buang gate `is_absen_today` per-baris. Mode lembur: tombol "Mulai Lembur" (muncul bila regular komplit/jadwal non-mid-shift), spinner OC (retail picker), list ganti tipe lembur komplemen.

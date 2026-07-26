@@ -237,6 +237,8 @@ const Absensi = () => {
   const [selectedKoreksi, setSelectedKoreksi] = useState(null);
   const [koreksiModalVisible, setKoreksiModalVisible] = useState(false);
   const [savingKoreksi, setSavingKoreksi] = useState(false);
+  const [tipeAbsenOptions, setTipeAbsenOptions] = useState([]);
+  const [loadingTipe, setLoadingTipe] = useState(false);
   // UI baru (toggle dalam halaman). Default "baru", persist ke localStorage.
   const [uiMode, setUiMode] = useState(
     () => localStorage.getItem("absensi_ui_mode") || "baru"
@@ -459,12 +461,45 @@ const Absensi = () => {
     });
   };
 
-  // Buka modal koreksi: prefill jam (datetime-local), status, catatan.
+  // Arah absen dari description (selaras BE absenDirectionOf).
+  const getRowDirection = (desc) => {
+    const d = String(desc || "").toLowerCase();
+    if (d.includes("keluar") || d.includes("pulang")) return "keluar";
+    if (d.includes("masuk")) return "masuk";
+    return "";
+  };
+
+  // Ambil tipe absen searah baris (untuk dropdown ganti tipe).
+  const fetchTipeAbsen = async (direction) => {
+    if (!direction) {
+      setTipeAbsenOptions([]);
+      return;
+    }
+    setLoadingTipe(true);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.get(
+        `${VITE_API_URL}/absensi/tipe-absen?direction=${direction}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setTipeAbsenOptions(Array.isArray(res.data?.data) ? res.data.data : []);
+    } catch {
+      setTipeAbsenOptions([]);
+    } finally {
+      setLoadingTipe(false);
+    }
+  };
+
+  // Buka modal koreksi: prefill jam (datetime-local), status, catatan, tipe.
   const handleKoreksi = (row) => {
+    const direction = getRowDirection(row.description);
     setSelectedKoreksi({
       absensi_id: row.absensi_id,
       nama_karyawan: row.nama_karyawan,
       category_absen: row.category_absen,
+      absen_type_id: String(row.absen_type_id ?? ""),
+      original_type_id: String(row.absen_type_id ?? ""),
+      direction,
       // datetime-local butuh "yyyy-MM-dd'T'HH:mm".
       absen_time_local: row.absen_time
         ? format(new Date(row.absen_time), "yyyy-MM-dd'T'HH:mm")
@@ -473,6 +508,7 @@ const Absensi = () => {
       reason: row.reason || "",
     });
     setKoreksiModalVisible(true);
+    fetchTipeAbsen(direction);
   };
 
   const handleSaveKoreksi = async () => {
@@ -497,6 +533,13 @@ const Absensi = () => {
       if (selectedKoreksi.status_absen === "1" || selectedKoreksi.status_absen === "2") {
         payload.status_absen = Number(selectedKoreksi.status_absen);
       }
+      // absen_type_id: kirim hanya bila admin ganti tipe.
+      if (
+        selectedKoreksi.absen_type_id &&
+        selectedKoreksi.absen_type_id !== selectedKoreksi.original_type_id
+      ) {
+        payload.absen_type_id = Number(selectedKoreksi.absen_type_id);
+      }
 
       const res = await axios.post(
         `${VITE_API_URL}/absensi/koreksi/${selectedKoreksi.absensi_id}`,
@@ -513,6 +556,9 @@ const Absensi = () => {
                 absen_time: updated.absen_time,
                 status_absen: updated.status_absen,
                 reason: updated.reason,
+                absen_type_id: updated.absen_type_id ?? item.absen_type_id,
+                category_absen: updated.category_absen ?? item.category_absen,
+                description: updated.description ?? item.description,
               }
             : item
         )
@@ -1260,6 +1306,40 @@ const Absensi = () => {
             <p style={{ margin: "0 0 14px", fontSize: "13px", color: "#666" }}>
               {selectedKoreksi.nama_karyawan} — {selectedKoreksi.category_absen}
             </p>
+
+            <div className="form-group" style={{ marginBottom: "12px" }}>
+              <label style={{ fontWeight: 600, fontSize: "13px" }}>
+                Tipe Absen{" "}
+                <span style={{ fontWeight: 400, color: "#888" }}>
+                  ({selectedKoreksi.direction || "-"})
+                </span>
+              </label>
+              <select
+                className="form-control"
+                value={selectedKoreksi.absen_type_id}
+                disabled={loadingTipe}
+                onChange={(e) =>
+                  setSelectedKoreksi({
+                    ...selectedKoreksi,
+                    absen_type_id: e.target.value,
+                  })
+                }
+              >
+                {loadingTipe && <option value="">Memuat tipe...</option>}
+                {!loadingTipe &&
+                  tipeAbsenOptions.length === 0 &&
+                  selectedKoreksi.absen_type_id && (
+                    <option value={selectedKoreksi.absen_type_id}>
+                      {selectedKoreksi.category_absen}
+                    </option>
+                  )}
+                {tipeAbsenOptions.map((t) => (
+                  <option key={t.absen_id} value={String(t.absen_id)}>
+                    {t.description || t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <div className="form-group" style={{ marginBottom: "12px" }}>
               <label style={{ fontWeight: 600, fontSize: "13px" }}>Waktu Absen</label>

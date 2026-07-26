@@ -821,13 +821,23 @@ const rekapKalender = async (req, res) => {
   }
 };
 
-// Koreksi absen (admin). Ubah jam/status/catatan 1 baris; recompute status_absen
-// + potongan dari waktu baru; sinkron absensi_sesi; audit ke log_activity.
-// Semua dalam 1 transaksi. Tipe absen & retail TIDAK diubah (di luar scope).
+// Arah absen dari description tipe (selaras getAbsenDirection FE).
+const absenDirectionOf = (desc) => {
+  const d = String(desc || "").toLowerCase();
+  if (d.includes("keluar") || d.includes("pulang")) return "keluar";
+  if (d.includes("masuk")) return "masuk";
+  return "";
+};
+
+// Koreksi absen (admin). Ubah jam/status/catatan/tipe 1 baris; recompute
+// status_absen + potongan dari waktu baru + window tipe (baru bila diganti);
+// sinkron absensi_sesi (tanggal + kategori); audit ke log_activity. Semua dalam
+// 1 transaksi. Tipe absen boleh diubah (arah masuk/keluar wajib sama). Retail tetap.
 const koreksiAbsen = async (req, res) => {
   const { absenId } = req.params;
   const adminId = req.user?.id;
-  const { absen_time, status_absen: statusInput, reason } = req.body;
+  const { absen_time, status_absen: statusInput, reason, absen_type_id: typeInput } =
+    req.body;
 
   if (!absen_time) {
     return res.status(400).json({
@@ -847,7 +857,37 @@ const koreksiAbsen = async (req, res) => {
       });
     }
 
-    const getTimeDB = await absensiModel.getTimeDB(oldRow.absen_type_id);
+    // Tipe absen: pakai tipe baru bila dikirim & beda, else tipe lama.
+    const oldType = await absensiModel.getTimeDB(oldRow.absen_type_id);
+    const newTypeId =
+      typeInput !== undefined && typeInput !== null && String(typeInput) !== ""
+        ? Number(typeInput)
+        : Number(oldRow.absen_type_id);
+    const typeChanged = newTypeId !== Number(oldRow.absen_type_id);
+
+    const getTimeDB = await absensiModel.getTimeDB(newTypeId);
+    if (!getTimeDB) {
+      return res.status(404).json({
+        message: "Tipe absen tidak ditemukan.",
+        status: "failed",
+        status_code: "404",
+      });
+    }
+
+    // Guard arah: tipe baru harus searah tipe lama (masuk↔masuk / keluar↔keluar).
+    // Cegah ubah masuk jadi keluar (pecahkan pairing sesi + ubah semantik).
+    if (typeChanged) {
+      const oldDir = absenDirectionOf(oldType?.description);
+      const newDir = absenDirectionOf(getTimeDB.description);
+      if (oldDir && newDir && oldDir !== newDir) {
+        return res.status(400).json({
+          message: `Tipe absen baru arahnya (${newDir}) beda dgn absen ini (${oldDir}). Pilih tipe yang searah.`,
+          status: "failed",
+          status_code: "400",
+        });
+      }
+    }
+
     const getPotonganLate = await absensiModel.getPotonganLate(1);
     const potonganLate = Number(getPotonganLate?.value || 0);
 
@@ -901,19 +941,35 @@ const koreksiAbsen = async (req, res) => {
           status_absen,
           potongan,
           reason: newReason,
+          absen_type_id: newTypeId,
           updated_at: updatedAt,
         },
         adminId,
         oldRow
       );
 
-      // Sinkron sesi: bila baris = masuk_absensi_id & tanggal bergeser → update.
+      // Sinkron sesi.
       const sesi = await sesiModel.findSesiByAbsensiId(conn, absenId);
-      if (sesi && String(sesi.masuk_absensi_id) === String(absenId)) {
-        const newTanggal = newMoment.format("YYYY-MM-DD");
-        const oldTanggal = moment(sesi.tanggal).format("YYYY-MM-DD");
-        if (newTanggal !== oldTanggal) {
-          await sesiModel.updateSesiTanggal(conn, sesi.sesi_id, newTanggal, updatedAt);
+      if (sesi) {
+        // Tanggal: hanya baris masuk yang meng-anchor tanggal sesi.
+        if (String(sesi.masuk_absensi_id) === String(absenId)) {
+          const newTanggal = newMoment.format("YYYY-MM-DD");
+          const oldTanggal = moment(sesi.tanggal).format("YYYY-MM-DD");
+          if (newTanggal !== oldTanggal) {
+            await sesiModel.updateSesiTanggal(conn, sesi.sesi_id, newTanggal, updatedAt);
+          }
+        }
+        // Kategori: bila tipe berganti, selaraskan kategori sesi dgn tipe baru
+        // (fallback ke kategori tipe keluar pasangan bila tipe kategori NULL) —
+        // jaga findOpenSesi tetap bisa memasangkan (cegah sesi pecah).
+        if (typeChanged) {
+          const newKategori =
+            getTimeDB.kategori_absen ||
+            (await absensiModel.getKeluarKategoriByName(getTimeDB.name)) ||
+            null;
+          if (String(newKategori || "") !== String(sesi.kategori_absen || "")) {
+            await sesiModel.updateSesiKategori(conn, sesi.sesi_id, newKategori, updatedAt);
+          }
         }
       }
 
@@ -935,6 +991,9 @@ const koreksiAbsen = async (req, res) => {
         status_absen,
         potongan,
         reason: newReason,
+        absen_type_id: newTypeId,
+        category_absen: getTimeDB.name,
+        description: getTimeDB.description,
         updated_by: adminId,
         updated_at: updatedAt,
       },
@@ -950,6 +1009,249 @@ const koreksiAbsen = async (req, res) => {
   }
 };
 
+// List tipe absen per arah (masuk/keluar) untuk dropdown koreksi.
+// GET /api/absensi/tipe-absen?direction=masuk|keluar
+const listTipeAbsenByDirection = async (req, res) => {
+  const direction = String(req.query.direction || "").toLowerCase();
+  if (direction !== "masuk" && direction !== "keluar") {
+    return res.status(400).json({
+      message: "Query 'direction' wajib 'masuk' atau 'keluar'.",
+      status: "failed",
+      status_code: "400",
+    });
+  }
+  try {
+    const data = await absensiModel.getTipeAbsenByDirection(direction);
+    return res.json({
+      message: "Get Tipe Absen Success",
+      status: "success",
+      status_code: "200",
+      data,
+    });
+  } catch (error) {
+    console.error("Error listTipeAbsenByDirection:", error);
+    return res.status(500).json({
+      message: "Internal Server Error",
+      status: "failed",
+      status_code: "500",
+      serverMessage: error.message,
+    });
+  }
+};
+
+// ── Kelola Sesi Absensi (page manage sesi) ──────────────────────────────────
+
+const logSesiActivity = async (conn, action, payload, adminId) => {
+  await conn.query(
+    `INSERT INTO log_activity (table_name, action, dataquery, user_id) VALUES (?, ?, ?, ?)`,
+    ["absensi_sesi", action, JSON.stringify(payload), adminId]
+  );
+};
+
+// GET /api/absensi/sesi — list sesi paginated + filter.
+const listSesiAbsensi = async (req, res) => {
+  try {
+    const filters = {
+      status: req.query.status || null,
+      userId: req.query.user_id || null,
+      retailId: req.query.retail_id || null,
+      kategori: req.query.kategori || null,
+      startDate: req.query.start_date || null,
+      endDate: req.query.end_date || null,
+      search: req.query.search || null,
+      page: req.query.page,
+      limit: req.query.limit,
+    };
+    const [{ rows, page, limit }, total] = await Promise.all([
+      sesiModel.listSesi(filters),
+      sesiModel.countSesi(filters),
+    ]);
+    return res.json({
+      message: "Get Sesi Absensi Success",
+      status: "success",
+      status_code: "200",
+      data: rows,
+      total,
+      page,
+      limit,
+    });
+  } catch (error) {
+    console.error("Error listSesiAbsensi:", error);
+    return res.status(500).json({
+      message: "Internal Server Error",
+      status: "failed",
+      status_code: "500",
+      serverMessage: error.message,
+    });
+  }
+};
+
+// GET /api/absensi/sesi/:sesiId/candidates — kandidat pasangan match.
+const getSesiCandidates = async (req, res) => {
+  try {
+    const result = await sesiModel.findMatchCandidates(req.params.sesiId);
+    if (!result.sesi) {
+      return res.status(404).json({
+        message: "Sesi tidak ditemukan.",
+        status: "failed",
+        status_code: "404",
+      });
+    }
+    return res.json({
+      message: "Get Kandidat Success",
+      status: "success",
+      status_code: "200",
+      data: result.candidates,
+      need_direction: result.needDir || null,
+      sesi: result.sesi,
+    });
+  } catch (error) {
+    console.error("Error getSesiCandidates:", error);
+    return res.status(500).json({
+      message: "Internal Server Error",
+      status: "failed",
+      status_code: "500",
+      serverMessage: error.message,
+    });
+  }
+};
+
+// POST /api/absensi/sesi/match — gabung masuk-sesi + keluar-sesi jadi closed.
+const matchSesiAbsensi = async (req, res) => {
+  const adminId = req.user?.id;
+  const { masuk_sesi_id, keluar_sesi_id } = req.body;
+  if (!masuk_sesi_id || !keluar_sesi_id) {
+    return res.status(400).json({
+      message: "masuk_sesi_id & keluar_sesi_id wajib diisi.",
+      status: "failed",
+      status_code: "400",
+    });
+  }
+  const updatedAt = moment().tz(timezone).format("YYYY-MM-DD HH:mm:ss");
+  const conn = await dbpool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const result = await sesiModel.matchSesi(conn, masuk_sesi_id, keluar_sesi_id, updatedAt);
+    await logSesiActivity(conn, "MATCH", result, adminId);
+    await conn.commit();
+    return res.json({
+      message: "Sesi berhasil dipasangkan.",
+      status: "success",
+      status_code: "200",
+      data: result,
+    });
+  } catch (error) {
+    await conn.rollback();
+    console.error("Error matchSesiAbsensi:", error);
+    return res.status(400).json({
+      message: error.message || "Gagal match sesi.",
+      status: "failed",
+      status_code: "400",
+    });
+  } finally {
+    conn.release();
+  }
+};
+
+// POST /api/absensi/sesi/:sesiId/unmatch — pisah closed jadi 2 incomplete.
+const unmatchSesiAbsensi = async (req, res) => {
+  const adminId = req.user?.id;
+  const { sesiId } = req.params;
+  const updatedAt = moment().tz(timezone).format("YYYY-MM-DD HH:mm:ss");
+  const conn = await dbpool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const result = await sesiModel.unmatchSesi(conn, sesiId, updatedAt);
+    await logSesiActivity(conn, "UNMATCH", result, adminId);
+    await conn.commit();
+    return res.json({
+      message: "Sesi berhasil dipisah.",
+      status: "success",
+      status_code: "200",
+      data: result,
+    });
+  } catch (error) {
+    await conn.rollback();
+    console.error("Error unmatchSesiAbsensi:", error);
+    return res.status(400).json({
+      message: error.message || "Gagal unmatch sesi.",
+      status: "failed",
+      status_code: "400",
+    });
+  } finally {
+    conn.release();
+  }
+};
+
+// POST /api/absensi/sesi/:sesiId/status — ubah status manual.
+const updateSesiAbsensi = async (req, res) => {
+  const adminId = req.user?.id;
+  const { sesiId } = req.params;
+  const { status } = req.body;
+  const updatedAt = moment().tz(timezone).format("YYYY-MM-DD HH:mm:ss");
+  const conn = await dbpool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const before = await sesiModel.getSesiById(sesiId, conn);
+    if (!before) throw new Error("Sesi tidak ditemukan.");
+    await sesiModel.updateSesiStatus(conn, sesiId, status, updatedAt);
+    await logSesiActivity(
+      conn,
+      "UPDATE_STATUS",
+      { sesi_id: Number(sesiId), old: before.status, new: status },
+      adminId
+    );
+    await conn.commit();
+    return res.json({
+      message: "Status sesi diperbarui.",
+      status: "success",
+      status_code: "200",
+      data: { sesi_id: Number(sesiId), status },
+    });
+  } catch (error) {
+    await conn.rollback();
+    console.error("Error updateSesiAbsensi:", error);
+    return res.status(400).json({
+      message: error.message || "Gagal ubah status.",
+      status: "failed",
+      status_code: "400",
+    });
+  } finally {
+    conn.release();
+  }
+};
+
+// POST /api/absensi/sesi/:sesiId/delete — hapus 1 sesi.
+const deleteSesiAbsensi = async (req, res) => {
+  const adminId = req.user?.id;
+  const { sesiId } = req.params;
+  const conn = await dbpool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const before = await sesiModel.getSesiById(sesiId, conn);
+    if (!before) throw new Error("Sesi tidak ditemukan.");
+    await logSesiActivity(conn, "DELETE", { sesi_id: Number(sesiId), snapshot: before }, adminId);
+    await sesiModel.deleteSesi(conn, sesiId);
+    await conn.commit();
+    return res.json({
+      message: "Sesi dihapus.",
+      status: "success",
+      status_code: "200",
+      data: { sesi_id: Number(sesiId) },
+    });
+  } catch (error) {
+    await conn.rollback();
+    console.error("Error deleteSesiAbsensi:", error);
+    return res.status(400).json({
+      message: error.message || "Gagal hapus sesi.",
+      status: "failed",
+      status_code: "400",
+    });
+  } finally {
+    conn.release();
+  }
+};
+
 module.exports = {
   createAbsensi,
   approveAbsen,
@@ -961,5 +1263,12 @@ module.exports = {
   cekFeePeruser,
   historyAbsensiAllUser,
   koreksiAbsen,
+  listTipeAbsenByDirection,
+  listSesiAbsensi,
+  getSesiCandidates,
+  matchSesiAbsensi,
+  unmatchSesiAbsensi,
+  updateSesiAbsensi,
+  deleteSesiAbsensi,
   rekapKalender,
 };
