@@ -250,9 +250,10 @@ const createAbsensi = async (req, res) => {
             String(jadwalKeluarId) === String(body.absen_type_id);
         } else {
           // Jalur non-jadwal / lembur: kategori keluar harus == kategori sesi open.
+          // Case-insensitive: kategori tipe bisa beda casing (mis. 'sore'/'Sore').
           cocok =
-            String(getTimeDB.kategori_absen || "") ===
-            String(openSesiAktif.kategori_absen || "");
+            String(getTimeDB.kategori_absen || "").trim().toLowerCase() ===
+            String(openSesiAktif.kategori_absen || "").trim().toLowerCase();
         }
 
         if (!cocok) {

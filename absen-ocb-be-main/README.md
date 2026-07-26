@@ -97,7 +97,7 @@ node src/index.js
 
 > **Auto-close sesi basi:** Saat user absen masuk lagi, `markStaleOpenSesiIncomplete` tandai sesi open lampau jadi `incomplete` — same-day (`is_cross_date=0`) tanggal < hari ini, atau cross-date (`is_cross_date=1`) yang sudah lewat batas 3 jam. Cegah blokir + jaga akurasi lembur-guard.
 
-> **Kategori tipe masuk = tipe keluar (WAJIB):** Pairing sesi cross-date match `absensi_sesi.kategori_absen`. `openSesi` ambil kategori dari tipe MASUK. Bila tipe MASUK `kategori_absen` NULL (mis. ter-null saat edit tipe absen di UI Kelola Tipe Absen), controller fallback ke kategori tipe KELUAR pasangan (`getKeluarKategoriByName`, match by `name`) agar masuk & keluar sekategori. **Jaga tipe masuk & keluar 1 shift punya `kategori_absen` SAMA** — beda kategori = sesi pecah (masuk menggantung open + keluar jadi `incomplete` terpisah).
+> **Kategori tipe masuk = tipe keluar (WAJIB):** Pairing sesi cross-date match `absensi_sesi.kategori_absen`. `openSesi` ambil kategori dari tipe MASUK. Bila tipe MASUK `kategori_absen` NULL (mis. ter-null saat edit tipe absen di UI Kelola Tipe Absen), controller fallback ke kategori tipe KELUAR pasangan (`getKeluarKategoriByName`, match by `name`) agar masuk & keluar sekategori. **Jaga tipe masuk & keluar 1 shift punya `kategori_absen` SAMA** — beda kategori = sesi pecah (masuk menggantung open + keluar jadi `incomplete` terpisah). Banding kategori (guard tipe keluar FE + BE) **case-insensitive** — beda casing (mis. masuk `'sore'` vs keluar `'Sore'`) tetap dianggap sama agar tipe keluar tampil.
 
 ### Scripts Maintenance
 

@@ -917,11 +917,13 @@ const AbsenKaryawan = () => {
         // Kategori absen masuk regular (untuk lock tipe keluar).
         // Keluar regular harus kategori sama dgn masuk → cegah sesi pecah.
         // Prefer sesi open lintas-hari; fallback ke masuk hari ini.
+        // Lowercase: kategori tipe masuk & keluar bisa beda casing (mis. masuk
+        // 'sore' vs keluar 'Sore') — banding case-insensitive agar keluar tampil.
         const masukRegularKategori = String(
           openRegularMasuk?.kategori_absen ||
             todayStatus.masuk?.kategori_absen ||
             ""
-        ).trim();
+        ).trim().toLowerCase();
 
         const filteredTypes = rawTypes
           .filter((type) => {
@@ -940,11 +942,12 @@ const AbsenKaryawan = () => {
             }
 
             // Lock keluar regular ke kategori masuknya (bila kategori tersedia).
+            // Banding case-insensitive (kategori tipe bisa beda casing).
             if (
               !hasCompletedRegularDay &&
               direction === "keluar" &&
               masukRegularKategori &&
-              String(type.kategori_absen || "").trim() !== masukRegularKategori
+              String(type.kategori_absen || "").trim().toLowerCase() !== masukRegularKategori
             ) {
               return false;
             }
