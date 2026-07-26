@@ -206,12 +206,15 @@ const buildTodayAttendanceStatus = (rows = []) => {
 // "Status Hari Ini" saat mode lembur aktif. Ambil baris terbaru per arah.
 const buildTodayLemburStatus = (rows = []) => {
   const status = { masuk: null, keluar: null };
+  const now = Date.now();
   rows.forEach((item) => {
     const direction = getAbsenDirection(item);
     if (!direction) return;
     if (item?.is_lembur !== 1 && item?.is_lembur !== "1") return;
     if (isRejectedAttendance(item)) return;
-    if (!isSameLocalDate(item.absen_time)) return;
+    // Absen lembur hari ini, ATAU masuk lembur cross-date yang sesinya masih OPEN
+    // (mis. SUBUH masuk 23:42 kemarin) — tetap tampil di card status.
+    if (!isSameLocalDate(item.absen_time) && !isCrossDateSesiActive(item, now)) return;
     const current = status[direction];
     const currentTime = current?.absen_time ? new Date(current.absen_time).getTime() : 0;
     const itemTime = item.absen_time ? new Date(item.absen_time).getTime() : 0;
@@ -462,14 +465,17 @@ const AbsenKaryawan = () => {
   // Exclude row cross-date bersesi 'closed' (penutup shift kemarin) — bukan
   // absen hari ini, jangan kunci mode.
   const attendanceMode = useMemo(() => {
+    const now = Date.now();
     const todayItems = history.filter(
       (item) =>
-        isSameLocalDate(item.absen_time) &&
         !isRejectedAttendance(item) &&
         !(
           (item.is_cross_date === 1 || item.is_cross_date === "1") &&
           item.sesi_status === "closed"
-        )
+        ) &&
+        // Absen hari ini, ATAU masuk cross-date yang sesinya masih OPEN (mis.
+        // lembur SUBUH masuk 23:42 kemarin, belum keluar) — kunci mode-nya.
+        (isSameLocalDate(item.absen_time) || isCrossDateSesiActive(item, now))
     );
     const hasLembur = todayItems.some((item) => item.is_lembur === 1 || item.is_lembur === "1");
     const hasRegular = todayItems.some((item) => item.is_lembur !== 1 && item.is_lembur !== "1");
@@ -483,11 +489,14 @@ const AbsenKaryawan = () => {
   // Dual-path: bila baris lembur punya data sesi → pakai sesi; else fallback ke
   // rekonstruksi via description (data pra-deploy). hasSesiData menandai path.
   const todayLemburSesi = useMemo(() => {
+    const now = Date.now();
     const todayLembur = history.filter(
       (item) =>
         (item.is_lembur === 1 || item.is_lembur === "1") &&
-        isSameLocalDate(item.absen_time) &&
-        !isRejectedAttendance(item)
+        !isRejectedAttendance(item) &&
+        // Absen lembur hari ini, ATAU masuk lembur cross-date yang sesinya masih
+        // OPEN (mis. SUBUH masuk 23:42 kemarin, belum keluar) — tetap dihitung.
+        (isSameLocalDate(item.absen_time) || isCrossDateSesiActive(item, now))
     );
     const withSesi = todayLembur.filter((item) => item.sesi_id != null);
     const hasSesiData = withSesi.length > 0;
@@ -611,23 +620,19 @@ const AbsenKaryawan = () => {
     }
   }, [effectiveLemburMode, filteredLemburTypes, selectedAbsenType]);
 
-  // Auto-select OC dari lembur masuk di history untuk lembur keluar.
+  // Auto-select OC dari lembur masuk untuk lembur keluar. Pakai masukRow dari
+  // todayLemburSesi (sudah mencakup masuk lembur cross-date yang sesinya open,
+  // mis. SUBUH masuk 23:42 kemarin) — bukan hanya absen hari ini.
   useEffect(() => {
     if (!effectiveLemburMode || selectedLemburRetail) return;
-    const todayLemburMasuk = history.find(
-      (item) =>
-        (item.is_lembur === 1 || item.is_lembur === "1") &&
-        isSameLocalDate(item.absen_time) &&
-        getAbsenDirection(item) === "masuk" &&
-        !isRejectedAttendance(item)
-    );
-    if (todayLemburMasuk?.retail_id) {
+    const lemburMasuk = todayLemburSesi.masukRow;
+    if (lemburMasuk?.retail_id) {
       const retail = lemburRetails.find(
-        (r) => String(r.retail_id) === String(todayLemburMasuk.retail_id)
+        (r) => String(r.retail_id) === String(lemburMasuk.retail_id)
       );
       if (retail) setSelectedLemburRetail(retail);
     }
-  }, [effectiveLemburMode, history, lemburRetails, selectedLemburRetail]);
+  }, [effectiveLemburMode, todayLemburSesi, lemburRetails, selectedLemburRetail]);
 
   // Fetch lembur types when user has an assigned shift (jadwal)
   useEffect(() => {
