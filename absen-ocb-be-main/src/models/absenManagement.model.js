@@ -126,8 +126,46 @@ ORDER BY t.name ASC`;
   return dbpool.execute(SQLQuery, [userId]);
 };
 
+// Tipe KELUAR dari sesi cross-date open LINTAS-HARI (masuk kemarin, belum keluar).
+// jadwal_harian CURDATE besok = shift baru (mis. PAGI), tak memuat tipe keluar
+// shift kemarin (mis. SORE 9 JAM keluar 01:00) → user tak bisa absen keluar.
+// Ambil tipe keluar via jadwal yang di-link sesi (s.jadwal_id), retail dari sesi.
+// Batasi: tipe masuk is_cross_date=1, sesi open masuk-only, tanggal sesi < hari
+// ini, & belum lewat deadline keluar (start_time keluar + tanggal masuk+1 + 3h).
+const getCrossDateKeluarTypesByJadwal = async (userId) => {
+  const SQLQuery = `SELECT
+      tk.absen_id,
+      tk.name,
+      tk.description,
+      r.retail_id,
+      r.name as retail_name,
+      r.latitude,
+      r.longitude,
+      r.radius,
+      tk.start_time,
+      tk.end_time,
+      NULL as group_absen,
+      0 AS is_absen_today,
+      tk.kategori_absen
+    FROM absensi_sesi s
+    JOIN jadwal_harian j ON j.id = s.jadwal_id AND j.is_deleted = 0
+    JOIN tipe_absen tm ON tm.absen_id = j.absen_masuk_id
+    JOIN tipe_absen tk ON tk.absen_id = j.absen_keluar_id AND tk.is_deleted = 0
+    JOIN retail r ON r.retail_id = s.retail_id
+    WHERE s.user_id = ?
+      AND s.status = 'open'
+      AND s.is_lembur = 0
+      AND s.masuk_absensi_id IS NOT NULL
+      AND s.keluar_absensi_id IS NULL
+      AND tm.is_cross_date = 1
+      AND NOW() <= (TIMESTAMP(DATE(s.tanggal) + INTERVAL 1 DAY, tk.start_time) + INTERVAL 3 HOUR)`;
+  const [rows] = await dbpool.execute(SQLQuery, [userId]);
+  return rows;
+};
+
 // Query jadwal harian: 2 tipe absen (masuk + keluar) via FK langsung.
-// Retail hanya sumber koordinat (lat/long/radius).
+// Retail hanya sumber koordinat (lat/long/radius). Ditambah tipe keluar dari
+// sesi cross-date open lintas-hari (shift kemarin yang belum ditutup).
 const getTypeAbsenByJadwal = async (userId) => {
   const SQLQuery = `SELECT
     t.absen_id,
@@ -160,7 +198,18 @@ const getTypeAbsenByJadwal = async (userId) => {
     AND j.tanggal = CURDATE()
     AND j.is_deleted = 0
   ORDER BY t.description ASC`;
-  return dbpool.execute(SQLQuery, [userId]);
+  const [today] = await dbpool.execute(SQLQuery, [userId]);
+  const crossKeluar = await getCrossDateKeluarTypesByJadwal(userId);
+  // Gabung + dedup by absen_id (cegah dobel bila kebetulan sama).
+  const seen = new Set(today.map((r) => r.absen_id));
+  const merged = [...today];
+  for (const r of crossKeluar) {
+    if (!seen.has(r.absen_id)) {
+      seen.add(r.absen_id);
+      merged.push(r);
+    }
+  }
+  return [merged];
 };
 
 // Tipe absen lembur untuk Sales Toko (cat 18). Trainee (cat 21) TIDAK boleh —
@@ -255,8 +304,11 @@ const getTypeAbsenPerShift = async (userId) => {
     if (jadwalRows.length > 0) {
       return getTypeAbsenByJadwal(userId);
     }
-    // Belum di-assign hari ini => tidak ada tipe absen (tak boleh absen sampai admin memetakan).
-    return [[], []];
+    // Belum di-assign hari ini => tak ada tipe absen regular. TAPI bila ada sesi
+    // cross-date open lintas-hari (shift kemarin belum ditutup), tetap kembalikan
+    // tipe keluarnya agar user bisa absen keluar.
+    const crossKeluar = await getCrossDateKeluarTypesByJadwal(userId);
+    return [crossKeluar];
   }
 
   // Non jadwal harian => perilaku lama tak berubah.
