@@ -1289,9 +1289,11 @@ const addAbsenToSesi = async (req, res) => {
         status_code: "404",
       });
     }
-    if (sesi.status !== "incomplete") {
+    // Sesi 'open' (masuk terisi, keluar kosong — mis. hasil buat sesi baru) &
+    // 'incomplete' (salah satu slot kosong) boleh ditambah absen. 'closed' tidak.
+    if (sesi.status !== "incomplete" && sesi.status !== "open") {
       return res.status(400).json({
-        message: "Hanya sesi incomplete yang bisa ditambah absen.",
+        message: "Hanya sesi open/incomplete yang bisa ditambah absen.",
         status: "failed",
         status_code: "400",
       });

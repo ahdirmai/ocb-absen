@@ -499,7 +499,8 @@ const SesiAbsensi = () => {
         <div style={{ display: "flex" }}>
           {row.status === "incomplete" &&
             iconBtn("#00897b", "Match pasangan", () => openMatchModal(row), "mdi-link-variant")}
-          {row.status === "incomplete" &&
+          {(row.status === "incomplete" || row.status === "open") &&
+            (row.masuk_absensi_id == null || row.keluar_absensi_id == null) &&
             iconBtn(
               "#43a047",
               `Tambah absen ${row.masuk_absensi_id == null ? "masuk" : "keluar"}`,
