@@ -64,8 +64,12 @@ public class AbsensiActivity extends AppCompatActivity {
     // Hasil arah-aware (regular) — tipe yang boleh di-attempt sekarang.
     private final List<AbsenItem> directionFiltered = new ArrayList<>();
 
-    // Mode lembur.
+    // Mode lembur. lemburMode = klik "Mulai Lembur"; effectiveLembur juga aktif
+    // otomatis saat ada sesi lembur berjalan (port effectiveLemburMode web).
     private boolean lemburMode = false;
+    private boolean effectiveLembur = false;
+    private String lemburDir = "";
+    private AbsenLogic.LemburSesi lemburSesi = new AbsenLogic.LemburSesi();
     private RetailOption selectedLemburRetail = null;
 
     private String token, userId;
@@ -297,6 +301,18 @@ public class AbsensiActivity extends AppCompatActivity {
         String nextRegularDirection = AbsenLogic.nextRegularDirection(history);
         String masukKategori = AbsenLogic.masukRegularKategori(history);
 
+        String mode = AbsenLogic.attendanceMode(history);
+        boolean regularInProgress = AbsenLogic.regularInProgress(history);
+        lemburSesi = AbsenLogic.todayLemburSesi(history);
+        boolean lemburComplete = AbsenLogic.lemburComplete(mode, lemburSesi);
+        // Lembur selesai / mid-shift regular → keluar dari mode manual (port effect web).
+        if (lemburComplete || regularInProgress) {
+            lemburMode = false;
+            selectedLemburRetail = null;
+        }
+        effectiveLembur = AbsenLogic.effectiveLemburMode(mode, lemburComplete, lemburMode, regularInProgress);
+        lemburDir = AbsenLogic.lemburDirection(effectiveLembur, lemburSesi);
+
         for (AbsenItem type : rawShiftTypes) {
             String dir = AbsenLogic.directionOf(type);
             if (dir.isEmpty()) continue;
@@ -313,20 +329,18 @@ public class AbsensiActivity extends AppCompatActivity {
             directionFiltered.add(type);
         }
 
-        updateLemburUi(hasCompletedRegular);
+        updateLemburUi(hasCompletedRegular, regularInProgress, mode);
         applyDisplayFilter();
     }
 
-    private void updateLemburUi(boolean hasCompletedRegular) {
-        boolean regularInProgress = AbsenLogic.regularInProgress(history);
-        String mode = AbsenLogic.attendanceMode(history);
+    private void updateLemburUi(boolean hasCompletedRegular, boolean regularInProgress, String mode) {
         boolean hasLemburTypes = !rawLemburTypes.isEmpty();
 
-        boolean canStart = hasLemburTypes && !lemburMode
+        boolean canStart = hasLemburTypes && !effectiveLembur
                 && (usesJadwalHarian ? !regularInProgress : hasCompletedRegular)
                 && !"lembur".equals(mode);
 
-        if (lemburMode) {
+        if (effectiveLembur) {
             buttonMulaiLembur.setVisibility(View.GONE);
             buttonBatalLembur.setVisibility(View.VISIBLE);
             setupLemburRetailSpinner();
@@ -344,9 +358,29 @@ public class AbsensiActivity extends AppCompatActivity {
         ad.setDropDownViewResource(R.layout.spinner_dropdown_item);
         spinnerLemburRetail.setAdapter(ad);
         spinnerLemburRetail.setVisibility(View.VISIBLE);
-        if (!lemburRetails.isEmpty() && selectedLemburRetail == null) {
+
+        // Pilihan lama ditahan; bila belum ada, ambil OC tempat lembur masuk
+        // (absen keluar wajib di OC yang sama). Resolve by retail_id — objek
+        // RetailOption dibangun ulang tiap fetch, jadi identitas tak bisa dipakai.
+        String wantId = selectedLemburRetail != null ? selectedLemburRetail.retail_id : null;
+        if (wantId == null && lemburSesi.masukRow != null) {
+            wantId = lemburSesi.masukRow.retail_id;
+        }
+        selectedLemburRetail = null;
+        if (wantId != null) {
+            for (RetailOption r : lemburRetails) {
+                if (wantId.equals(r.retail_id)) {
+                    selectedLemburRetail = r;
+                    break;
+                }
+            }
+        }
+        if (selectedLemburRetail == null && !lemburRetails.isEmpty()) {
             selectedLemburRetail = lemburRetails.get(0);
         }
+        int idx = lemburRetails.indexOf(selectedLemburRetail);
+        if (idx >= 0) spinnerLemburRetail.setSelection(idx);
+        spinnerLemburRetail.setEnabled(!"keluar".equals(lemburDir));
     }
 
     private void enterLemburMode() {
@@ -364,66 +398,17 @@ public class AbsensiActivity extends AppCompatActivity {
         recompute();
     }
 
-    // Lembur: arah berikutnya (masuk→keluar) berdasar sesi lembur di history.
-    private String lemburNextDirection() {
-        boolean masukDone = false, keluarDone = false;
-        boolean hasOpen = false, hasClosed = false, hasSesi = false;
-        for (HistoryItem h : history) {
-            if (h.is_lembur != 1) continue;
-            if (!AbsenLogic.isSameLocalDate(h.absen_time)) continue;
-            if (AbsenLogic.isRejectedAttendance(h)) continue;
-            if (h.sesi_id != null) {
-                hasSesi = true;
-                if ("open".equals(h.sesi_status)) hasOpen = true;
-                if ("closed".equals(h.sesi_status)) hasClosed = true;
-            }
-            String d = AbsenLogic.directionOf(h);
-            if ("masuk".equals(d)) masukDone = true;
-            if ("keluar".equals(d)) keluarDone = true;
-        }
-        if (hasSesi) {
-            if (hasOpen) return "keluar";
-            if (hasClosed) return "";
-            return "masuk";
-        }
-        if (!masukDone) return "masuk";
-        if (!keluarDone) return "keluar";
-        return "";
-    }
-
-    // Anchor kategori lembur masuk (untuk lock keluar).
-    private String lemburMasukKategori() {
-        for (HistoryItem h : history) {
-            if (h.is_lembur == 1 && "masuk".equals(AbsenLogic.directionOf(h))
-                    && AbsenLogic.isSameLocalDate(h.absen_time) && !AbsenLogic.isRejectedAttendance(h)) {
-                return h.kategori_absen == null ? "" : h.kategori_absen.trim();
-            }
-        }
-        return "";
-    }
-
     // Terapkan spinner kategori + search di atas hasil arah-aware / lembur.
     private void applyDisplayFilter() {
         absenList.clear();
 
         List<AbsenItem> base = new ArrayList<>();
         String info;
-        if (lemburMode) {
-            String dir = lemburNextDirection();
-            String masukKat = lemburMasukKategori();
-            for (AbsenItem t : rawLemburTypes) {
-                if (!AbsenLogic.directionOf(t).equals(dir)) continue;
-                if (dir.equals("keluar") && !masukKat.isEmpty()) {
-                    // Lembur keluar: cocokkan nama dgn masuk (pola web).
-                    // fallback kategori bila nama tak tersedia.
-                    String tk = t.getKategori_absen() == null ? "" : t.getKategori_absen().trim();
-                    if (!tk.equalsIgnoreCase(masukKat)) continue;
-                }
-                base.add(t);
-            }
-            info = dir.isEmpty()
+        if (effectiveLembur) {
+            base.addAll(AbsenLogic.filterLemburTypes(rawLemburTypes, lemburDir, lemburSesi));
+            info = lemburDir.isEmpty()
                     ? "Lembur hari ini sudah lengkap."
-                    : ("Mode Lembur — silakan absen " + (dir.equals("keluar") ? "keluar" : "masuk")
+                    : ("Mode Lembur — silakan absen " + (lemburDir.equals("keluar") ? "keluar" : "masuk")
                        + (selectedLemburRetail != null ? " di " + selectedLemburRetail.name : ""));
         } else {
             base.addAll(directionFiltered);
@@ -445,7 +430,9 @@ public class AbsensiActivity extends AppCompatActivity {
         String search = searchBoxAbsen.getText().toString().toLowerCase(Locale.US).trim();
 
         for (AbsenItem it : base) {
-            boolean kMatch = kategori.equals("Semua")
+            // Mode lembur: lewati filter kategori (pola web — tipe lembur bisa
+            // ber-kategori NULL, akan hilang bila spinner bukan "Semua").
+            boolean kMatch = effectiveLembur || kategori.equals("Semua")
                     || (it.getKategori_absen() != null && it.getKategori_absen().equalsIgnoreCase(kategori));
             boolean sMatch = search.isEmpty()
                     || safe(it.getDescription()).contains(search)
@@ -453,7 +440,7 @@ public class AbsensiActivity extends AppCompatActivity {
                     || safe(it.getName()).contains(search);
             if (kMatch && sMatch) absenList.add(it);
         }
-        absenAdapter.setLemburContext(lemburMode, selectedLemburRetail);
+        absenAdapter.setLemburContext(effectiveLembur, selectedLemburRetail);
         absenAdapter.notifyDataSetChanged();
 
         if (info.isEmpty()) {

@@ -11,6 +11,8 @@ public class HistoryItem {
     public String absen_time;      // ISO / "yyyy-MM-dd HH:mm:ss"
     public String description;
     public String kategori_absen;
+    public String category_absen;  // nama tipe absen (BE: ta.name AS category_absen)
+    public String retail_id;
     public int is_lembur;          // 0/1
     public int is_cross_date;      // 0/1
     public String sesi_status;     // "open" | "closed" | null
@@ -27,7 +29,9 @@ public class HistoryItem {
         h.absen_type_id = o.optString("absen_type_id", null);
         h.absen_time = o.optString("absen_time", null);
         h.description = o.optString("description", "");
-        h.kategori_absen = o.optString("kategori_absen", "");
+        h.kategori_absen = o.isNull("kategori_absen") ? "" : o.optString("kategori_absen", "");
+        h.category_absen = o.isNull("category_absen") ? "" : o.optString("category_absen", "");
+        h.retail_id = o.isNull("retail_id") ? null : o.optString("retail_id", null);
         h.is_lembur = o.optInt("is_lembur", 0);
         h.is_cross_date = o.optInt("is_cross_date", 0);
         h.sesi_status = o.isNull("sesi_status") ? null : o.optString("sesi_status", null);

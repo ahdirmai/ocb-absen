@@ -116,6 +116,13 @@ public class AbsenLogic {
         return deadline < 0 || System.currentTimeMillis() <= deadline;
     }
 
+    // Baris dihitung "hari ini" bila bertanggal hari ini ATAU masuk cross-date
+    // yang sesinya masih open (mis. lembur SUBUH masuk 23:42 kemarin).
+    public static boolean isTodayOrCrossActive(HistoryItem h) {
+        if (h == null) return false;
+        return isSameLocalDate(h.absen_time) || isCrossDateSesiActive(h);
+    }
+
     // ── findOpenRegularMasuk: sesi cross-date open wajib-keluar, dalam window ──
     public static HistoryItem findOpenRegularMasuk(List<HistoryItem> rows) {
         List<HistoryItem> open = new ArrayList<>();
@@ -192,7 +199,7 @@ public class AbsenLogic {
         boolean hasLembur = false, hasRegular = false;
         for (HistoryItem h : rows) {
             if (h == null) continue;
-            if (!isSameLocalDate(h.absen_time)) continue;
+            if (!isTodayOrCrossActive(h)) continue;
             if (isRejectedAttendance(h)) continue;
             if (h.is_cross_date == 1 && "closed".equals(h.sesi_status)) continue;
             if (h.is_lembur == 1) hasLembur = true;
@@ -202,6 +209,88 @@ public class AbsenLogic {
         if (hasRegular && !hasLembur) return "regular";
         if (hasRegular && hasLembur) return "mixed";
         return null;
+    }
+
+    // ── Sesi lembur hari ini (port todayLemburSesi web) ──
+    public static class LemburSesi {
+        public final List<HistoryItem> rows = new ArrayList<>();
+        public boolean hasSesiData, hasOpen, hasClosed;
+        public HistoryItem masukRow;
+    }
+
+    public static LemburSesi todayLemburSesi(List<HistoryItem> rows) {
+        LemburSesi s = new LemburSesi();
+        for (HistoryItem h : rows) {
+            if (h == null) continue;
+            if (h.is_lembur != 1) continue;
+            if (isRejectedAttendance(h)) continue;
+            if (!isTodayOrCrossActive(h)) continue;
+            s.rows.add(h);
+            if (h.sesi_id != null) {
+                s.hasSesiData = true;
+                if ("open".equals(h.sesi_status)) s.hasOpen = true;
+                if ("closed".equals(h.sesi_status)) s.hasClosed = true;
+            }
+            if (s.masukRow == null && "masuk".equals(directionOf(h))) s.masukRow = h;
+        }
+        return s;
+    }
+
+    // Lembur selesai. Prefer sesi ('closed'); fallback pra-sesi scan description.
+    public static boolean lemburComplete(String mode, LemburSesi s) {
+        if (!"lembur".equals(mode) && !"mixed".equals(mode)) return false;
+        if (s.hasSesiData) return s.hasClosed;
+        boolean masukDone = false, keluarDone = false;
+        for (HistoryItem h : s.rows) {
+            String d = directionOf(h);
+            if ("masuk".equals(d)) masukDone = true;
+            if ("keluar".equals(d)) keluarDone = true;
+        }
+        return masukDone && keluarDone;
+    }
+
+    // Mode lembur efektif: sesi lembur berjalan (otomatis), ATAU user menekan
+    // "Mulai Lembur" dan tidak sedang mid-shift regular.
+    public static boolean effectiveLemburMode(String mode, boolean complete,
+                                              boolean manual, boolean regularInProgress) {
+        return ("lembur".equals(mode) && !complete) || (manual && !regularInProgress);
+    }
+
+    // Arah attempt lembur berikutnya. Prefer sesi; fallback scan description.
+    public static String lemburDirection(boolean effective, LemburSesi s) {
+        if (!effective) return "";
+        if (s.hasSesiData) {
+            if (s.hasOpen) return "keluar";
+            if (s.hasClosed) return "";
+            return "masuk";
+        }
+        boolean masukDone = false, keluarDone = false;
+        for (HistoryItem h : s.rows) {
+            String d = directionOf(h);
+            if ("masuk".equals(d)) masukDone = true;
+            if ("keluar".equals(d)) keluarDone = true;
+        }
+        if (!masukDone) return "masuk";
+        if (!keluarDone) return "keluar";
+        return "";
+    }
+
+    // Tipe lembur untuk arah berjalan. Keluar dikunci ke NAMA tipe masuk (pola
+    // web + pasangan BE tk.name = tm.name), bukan kategori (bisa NULL).
+    public static List<AbsenItem> filterLemburTypes(List<AbsenItem> types, String dir, LemburSesi s) {
+        List<AbsenItem> out = new ArrayList<>();
+        if (dir == null || dir.isEmpty()) return out;
+        String masukName = s.masukRow == null || s.masukRow.category_absen == null
+                ? "" : s.masukRow.category_absen.trim();
+        for (AbsenItem t : types) {
+            if (!directionOf(t).equals(dir)) continue;
+            if ("keluar".equals(dir) && !masukName.isEmpty()) {
+                String tn = t.getName() == null ? "" : t.getName().trim();
+                if (!tn.equals(masukName)) continue;
+            }
+            out.add(t);
+        }
+        return out;
     }
 
     // ── nextRegularDirection ──
