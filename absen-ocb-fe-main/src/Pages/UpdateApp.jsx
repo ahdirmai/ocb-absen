@@ -136,7 +136,7 @@ const lemburSteps = [
   },
   {
     title: "Absen keluar lembur",
-    body: "Saat lembur selesai, buka aplikasi lagi. Mode lembur menyala otomatis dan tipe KELUAR pasangannya langsung muncul — tak perlu tekan Mulai Lembur lagi. OC sudah terkunci ke tempat Anda masuk tadi.",
+    body: "Saat lembur selesai, buka aplikasi lagi. Mode lembur menyala otomatis dan tipe KELUAR pasangannya langsung muncul — tak perlu tekan Mulai Lembur lagi. OC sudah terkunci ke tempat Anda masuk tadi. Lembur juga hanya dihitung bila masuk dan keluar keduanya tercatat.",
   },
 ];
 
@@ -262,6 +262,25 @@ const UpdateApp = () => {
       >
         Hal penting yang perlu diketahui
       </p>
+
+      <div
+        style={{
+          background: "#fdecea",
+          border: "1px solid #e74c3c",
+          borderRadius: "12px",
+          padding: "14px",
+          marginBottom: "20px",
+        }}
+      >
+        <p style={{ margin: "0 0 6px", fontWeight: "bold", color: "#c0392b", fontSize: "15px" }}>
+          Wajib absen masuk DAN keluar
+        </p>
+        <p style={{ margin: 0, fontSize: "14px", color: "#7b241c", lineHeight: 1.6 }}>
+          Kehadiran hanya dihitung bila absen masuk dan absen keluar keduanya
+          tercatat. Absen masuk saja, atau keluar saja, <b>tidak dihitung hadir
+          dengan alasan apa pun</b>. Pastikan Anda absen keluar sebelum pulang.
+        </p>
+      </div>
 
       {absenPoints.map((p) => (
         <div key={p.title} style={{ display: "flex", gap: "12px", marginBottom: "16px" }}>
