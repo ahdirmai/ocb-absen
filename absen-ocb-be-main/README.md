@@ -36,7 +36,14 @@ node src/index.js
 | Method | URL | Keterangan |
 |---|---|---|
 | POST | `/api/users/login-dashboard` | Login dashboard |
+| POST | `/api/users/login` | Login Android (+ `checkImei` device-binding) |
 | POST | `/api/users/logout` | Logout |
+
+> **Device binding (IMEI):** App Android kirim `ANDROID_ID` (bukan IMEI asli) sebagai field `imei` saat login. Middleware `checkImei`: bila `user.imei` NULL → device auto-terdaftar; bila sudah terisi & berbeda → login ditolak ("Account is already registered to another device"). IMEI dipakai hanya di login, tidak dicek saat submit absensi.
+
+> **Reset IMEI (ganti HP):** Tombol Reset di modal edit karyawan (page `/users`) → set `user.imei` jadi NULL → device baru auto-terdaftar saat login berikutnya. Tak ada endpoint khusus; pakai `POST /users/update/:idUser`. **Penting:** update dikirim sebagai `FormData`, dan `FormData.append("imei", null)` menghasilkan string `"null"` yang lolos guard BE `body.imei || null` → kolom terisi teks `"null"` dan binding rusak permanen. FE kirim string kosong (`"" || null` → `null`).
+
+> **Catatan soft delete user:** `deleteUsers` set `is_deleted=1` (bukan hard delete), dan semua query pembacaan (list/upline/laporan/dashboard) sudah filter `is_deleted=0`. **Tapi jalur auth belum:** `findUserByUsername` tak filter `is_deleted` maupun `enabled`, jadi karyawan yang sudah dihapus / berstatus Non Active **masih bisa login dan absen**. `findImei` juga tak filter, sehingga IMEI user terhapus masih memblokir HP-nya dipakai orang lain. Belum diperbaiki — menyentuh jalur auth produksi.
 
 ### Absensi
 | Method | URL | Keterangan |
@@ -104,6 +111,15 @@ node src/index.js
 > **Auto-close sesi basi:** Saat user absen masuk lagi, `markStaleOpenSesiIncomplete` tandai sesi open lampau jadi `incomplete` — same-day (`is_cross_date=0`) tanggal < hari ini, atau cross-date (`is_cross_date=1`) yang sudah lewat batas 3 jam. Cegah blokir + jaga akurasi lembur-guard.
 
 > **Kategori tipe masuk = tipe keluar (WAJIB):** Pairing sesi cross-date match `absensi_sesi.kategori_absen`. `openSesi` ambil kategori dari tipe MASUK. Bila tipe MASUK `kategori_absen` NULL (mis. ter-null saat edit tipe absen di UI Kelola Tipe Absen), controller fallback ke kategori tipe KELUAR pasangan (`getKeluarKategoriByName`, match by `name`) agar masuk & keluar sekategori. **Jaga tipe masuk & keluar 1 shift punya `kategori_absen` SAMA** — beda kategori = sesi pecah (masuk menggantung open + keluar jadi `incomplete` terpisah). Banding kategori (guard tipe keluar FE + BE) **case-insensitive** — beda casing (mis. masuk `'sore'` vs keluar `'Sore'`) tetap dianggap sama agar tipe keluar tampil.
+
+### Halaman Panduan Karyawan (`/update`)
+> **Route publik FE** (`UpdateApp.jsx`, di luar `ProtectedRoute`) — dibuka karyawan dari HP tanpa login. Isi: langkah pasang APK Android (uninstall lama → unduh Drive → izinkan sumber tak dikenal → pasang → login), ringkasan cara absen, langkah lembur, troubleshooting. Link APK di-hardcode ke file Google Drive — **update link ini tiap rilis APK baru**.
+
+> **Aturan yang dikomunikasikan di halaman ini:**
+> - **Wajib absen masuk DAN keluar** — kehadiran hanya dihitung bila sesi lengkap (`status='closed'`). Absen sepihak → `incomplete`, tidak dihitung hadir. Berlaku regular & lembur.
+> - **Perubahan jadwal diajukan H-1** — aturan KEBIJAKAN, **tak ada enforcement di kode**. Admin secara teknis masih bisa ubah `jadwal_harian` di hari-H. Dasar aturannya: tipe absen dibaca dari `jadwal_harian` `tanggal=CURDATE()`, jadi perubahan hari-H tak tercermin pada sesi yang sudah berjalan.
+
+> **Signature APK:** APK yang beredar (`versionCode 2`) ter-sign **debug keystore**, bukan `CN=ocb`. Selama build baru pakai debug key yang sama (`~/.android/debug.keystore`, SHA-256 `0586A3DF…`), update bisa menimpa tanpa uninstall. Verifikasi sebelum distribusi: `apksigner verify --print-certs <apk>` — bandingkan dengan APK yang sudah terpasang. Beda signature → semua karyawan wajib uninstall dulu.
 
 ### Scripts Maintenance
 
