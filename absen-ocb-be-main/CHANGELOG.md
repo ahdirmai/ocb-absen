@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Android: tipe keluar lembur tak muncul + sesi lembur tak terdeteksi** (`AbsensiActivity.java`, `AbsenLogic.java`, `HistoryItem.java`) — port web `AbsenKaryawan.jsx` tak lengkap; BE (`getOpenLemburKeluarTypes`, commit `88b437c`) sudah benar, cacat murni di client.
+  - **Mode lembur otomatis**: web turunkan `effectiveLemburMode` dari state server (sesi lembur open → mode lembur menyala sendiri). Android hanya punya flag manual dari tombol "Mulai Lembur", dan `updateLemburUi` justru MENYEMBUNYIKAN tombol itu saat `attendanceMode=='lembur'` → setelah restart app / hari berikutnya user terkunci total (tombol hilang, filter ambil cabang regular, tipe keluar tak pernah dirender). Port `effectiveLemburMode`/`lemburComplete` + reset saat lembur selesai atau mid-shift regular.
+  - **Filter tanggal buang lembur lintas tengah malam**: `attendanceMode`/`lemburNextDirection`/`lemburMasukKategori` pakai `isSameLocalDate` saja, web pakai `isSameLocalDate || isCrossDateSesiActive`. Lembur SUBUH masuk 23:42 kemarin tak terlihat hari ini. Fix: helper `isTodayOrCrossActive`.
+  - **Tipe keluar dicocokkan pakai field salah**: Android banding `kategori_absen` (nullable), web + pasangan BE pakai NAMA tipe (`tk.name = tm.name`). Fix: `filterLemburTypes` banding `t.getName()` vs `masukRow.category_absen`; `HistoryItem` parse `category_absen` + `retail_id` (guard `isNull` — `optString(k, null)` kembalikan literal `"null"` untuk JSON null).
+  - **OC lembur auto-pilih + terkunci** saat arah keluar (padanan `disabled` web), resolve by `retail_id` karena objek retail dibangun ulang tiap fetch. Filter spinner kategori dilewati saat mode lembur (tipe lembur bisa ber-kategori NULL). `setLemburContext` kirim flag efektif, bukan manual.
+
+### Added
+- **Halaman panduan `/update`** (`UpdateApp.jsx`, route publik di luar `ProtectedRoute` — dibuka karyawan dari HP tanpa login). Berisi: langkah pasang APK (uninstall lama → unduh Drive → izinkan sumber → pasang → login), ringkasan **cara absen** (arah-aware, masuk dibuka 1 jam sebelum shift, radius → approval, shift lintas hari), langkah **lembur** (regular komplit dulu → pilih OC → masuk → keluar otomatis terdeteksi), dan troubleshooting "tipe absen tidak muncul".
+- **Reset IMEI di edit karyawan** (`Users.jsx`) — tombol Reset di samping field IMEI + dialog konfirmasi; kosongkan `user.imei` jadi NULL supaya karyawan bisa login dari HP baru (BE `checkImei` auto-daftarkan device saat login berikutnya). Tak perlu endpoint baru — pakai `POST /users/update/:idUser` yang ada.
+  - **Fix jebakan FormData**: `FormData.append("imei", null)` menghasilkan string `"null"`, dan BE `body.imei || null` menganggapnya nilai sah → kolom terisi teks `"null"` dan device-binding rusak permanen. Kirim string kosong (`"" || null` → `null`).
+  - `handleSaveUpdate` terima param `overrides` (`payloadUser = {...selectedUser, ...overrides}`) — `setSelectedUser` async, save langsung setelah setState akan kirim nilai lama.
+- **UI/UX baru halaman Users (toggle Lama/Baru)** (`Users.jsx`) — pola sama seperti Absensi (segmented toggle di header, persist `localStorage` key `users_ui_mode`, default Baru; UI lama utuh). Stat cards (Total/Aktif/Non Aktif/**Tanpa IMEI**), search global lintas kolom, quick-filter chip, tabel modern (avatar+username, kolom Perangkat sbg badge hijau/oranye, status pill, aksi ikon). FE only.
+
 ### Added
 - **Hapus histori absensi (admin)** (`POST /api/absensi/delete/:absenId`, tombol di page Absensi) — hapus 1 baris `absensi` beserta penyesuaian sesi. Hard delete (tabel tak punya kolom soft-delete) + snapshot baris lama ke `log_activity` (action `DELETE`) untuk jejak/recovery manual. **Efek sesi** (`detachAbsensiFromSesi`): slot sesi yang mereferensi baris ini di-NULL-kan & status turun jadi `incomplete`; bila sesi jadi kosong total (dua slot NULL) sesi ikut dihapus. Transaksional. File foto TIDAK dihapus dari disk.
 - **Page baru "Kelola Sesi Absensi"** (`SesiAbsensi.jsx`, `/sesi-absensi`) — admin view + manage `absensi_sesi` (pairing masuk↔keluar) via UI, gantikan kerja manual `scripts/fix-cross-date-sesi.js`.

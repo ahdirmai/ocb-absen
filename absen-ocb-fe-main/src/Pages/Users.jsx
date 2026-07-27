@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+/* eslint-disable react/prop-types */
+import { useState, useRef, useEffect, useMemo } from "react";
 import axios from "axios";
 import Swal from "sweetalert2";
 import DataTable from "react-data-table-component";
@@ -12,6 +13,189 @@ const VITE_API_URL = import.meta.env.VITE_API_URL;
 const VITE_API_IMAGE = import.meta.env.VITE_API_IMAGE;
 const now = new Date();
 const DateNow = format(now, "yyyy-MM-dd HH:mm:ss");
+
+const StatCard = ({ label, value, color, icon }) => (
+  <div
+    style={{
+      flex: "1 1 140px",
+      background: "#fff",
+      borderRadius: "14px",
+      padding: "16px 18px",
+      boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+      display: "flex",
+      alignItems: "center",
+      gap: "12px",
+    }}
+  >
+    <div
+      style={{
+        width: "42px",
+        height: "42px",
+        borderRadius: "12px",
+        background: `${color}1a`,
+        color,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: "22px",
+        flexShrink: 0,
+      }}
+    >
+      <i className={`mdi ${icon}`}></i>
+    </div>
+    <div>
+      <div style={{ fontSize: "22px", fontWeight: 700, color: "#263238", lineHeight: 1.1 }}>
+        {value}
+      </div>
+      <div style={{ fontSize: "12px", color: "#90a4ae" }}>{label}</div>
+    </div>
+  </div>
+);
+
+const UsersBaru = ({
+  loading,
+  error,
+  stats,
+  rows,
+  columns,
+  globalSearch,
+  setGlobalSearch,
+  quickFilter,
+  setQuickFilter,
+  onAdd,
+}) => {
+  const chips = [
+    { key: "semua", label: "Semua" },
+    { key: "aktif", label: "Aktif" },
+    { key: "nonaktif", label: "Non Aktif" },
+    { key: "tanpa_imei", label: "Tanpa IMEI" },
+  ];
+
+  return (
+    <div style={{ padding: "4px 2px" }}>
+      {/* Stat ringkasan */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", marginBottom: "16px" }}>
+        <StatCard label="Total Karyawan" value={stats.total} color="#455a64" icon="mdi-account-group" />
+        <StatCard label="Aktif" value={stats.aktif} color="#2e7d32" icon="mdi-account-check" />
+        <StatCard label="Non Aktif" value={stats.nonaktif} color="#c62828" icon="mdi-account-off" />
+        <StatCard label="Tanpa IMEI" value={stats.tanpaImei} color="#ef6c00" icon="mdi-cellphone-off" />
+      </div>
+
+      {/* Toolbar */}
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: "14px",
+          padding: "16px",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+          marginBottom: "16px",
+        }}
+      >
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "flex-end" }}>
+          <div style={{ flex: "3 1 260px" }}>
+            <label style={{ fontSize: "12px", color: "#607d8b", fontWeight: 600 }}>Cari</label>
+            <div style={{ position: "relative" }}>
+              <i
+                className="mdi mdi-magnify"
+                style={{ position: "absolute", left: "10px", top: "9px", color: "#b0bec5", fontSize: "18px" }}
+              ></i>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Nama, username, IMEI, job title, atasan..."
+                value={globalSearch}
+                onChange={(e) => setGlobalSearch(e.target.value)}
+                style={{ paddingLeft: "34px", borderRadius: "10px" }}
+              />
+            </div>
+          </div>
+          <button
+            className="btn"
+            onClick={onAdd}
+            style={{ background: "#2471a3", color: "#fff", borderRadius: "10px", fontWeight: 600 }}
+          >
+            <i className="mdi mdi-account-plus"></i> Tambah Karyawan
+          </button>
+        </div>
+
+        {/* Quick filter chips */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "14px" }}>
+          {chips.map((c) => (
+            <button
+              key={c.key}
+              onClick={() => setQuickFilter(c.key)}
+              style={{
+                border: "1px solid",
+                borderColor: quickFilter === c.key ? "#e74c3c" : "#cfd8dc",
+                background: quickFilter === c.key ? "#e74c3c" : "#fff",
+                color: quickFilter === c.key ? "#fff" : "#607d8b",
+                borderRadius: "999px",
+                padding: "5px 14px",
+                fontSize: "12px",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tabel */}
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: "14px",
+          padding: "6px",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+        }}
+      >
+        {loading ? (
+          <div style={{ textAlign: "center", padding: "40px", color: "#90a4ae" }}>
+            <i className="mdi mdi-loading mdi-spin" style={{ fontSize: "28px" }}></i>
+            <p style={{ marginTop: "8px" }}>Memuat data...</p>
+          </div>
+        ) : error ? (
+          <div style={{ textAlign: "center", padding: "40px", color: "#c62828" }}>
+            <i className="mdi mdi-alert-circle" style={{ fontSize: "28px" }}></i>
+            <p style={{ marginTop: "8px" }}>Error: {error}</p>
+          </div>
+        ) : rows.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "48px", color: "#b0bec5" }}>
+            <i className="mdi mdi-account-search" style={{ fontSize: "36px" }}></i>
+            <p style={{ marginTop: "8px" }}>Tidak ada karyawan yang cocok.</p>
+          </div>
+        ) : (
+          <DataTable
+            keyField="user_id"
+            columns={columns}
+            data={rows}
+            pagination
+            responsive
+            highlightOnHover
+            fixedHeader
+            fixedHeaderScrollHeight="62vh"
+            customStyles={{
+              headCells: {
+                style: {
+                  background: "#f5f7fa",
+                  color: "#546e7a",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.3px",
+                },
+              },
+              rows: { style: { minHeight: "56px", fontSize: "13px" } },
+              cells: { style: { paddingTop: "6px", paddingBottom: "6px" } },
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+};
 
 const Users = () => {
   const [Users, setUsers] = useState([]);
@@ -49,6 +233,16 @@ const Users = () => {
   });
   const inputRefs = useRef({});
   const [activeInput, setActiveInput] = useState(null);
+  // UI baru (toggle dalam halaman). Default "baru", persist ke localStorage.
+  const [uiMode, setUiMode] = useState(
+    () => localStorage.getItem("users_ui_mode") || "baru"
+  );
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [quickFilter, setQuickFilter] = useState("semua"); // semua|aktif|nonaktif|tanpa_imei
+
+  useEffect(() => {
+    localStorage.setItem("users_ui_mode", uiMode);
+  }, [uiMode]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -157,6 +351,35 @@ const Users = () => {
       // Pastikan bahwa itemValue mengandung filterValue
       return itemValue.includes(filterValue);
     })
+  );
+
+  // UI baru: satu kotak cari untuk semua kolom + chip filter cepat.
+  const displayedRows = useMemo(() => {
+    const q = globalSearch.trim().toLowerCase();
+    return Users.filter((row) => {
+      if (quickFilter === "aktif" && !row.enabled) return false;
+      if (quickFilter === "nonaktif" && row.enabled) return false;
+      if (quickFilter === "tanpa_imei" && row.imei) return false;
+      if (!q) return true;
+      return [
+        row.name,
+        row.username,
+        row.imei,
+        row.role,
+        row.category_user,
+        row.upline,
+      ].some((v) => String(v ?? "").toLowerCase().includes(q));
+    });
+  }, [Users, globalSearch, quickFilter]);
+
+  const stats = useMemo(
+    () => ({
+      total: Users.length,
+      aktif: Users.filter((r) => r.enabled).length,
+      nonaktif: Users.filter((r) => !r.enabled).length,
+      tanpaImei: Users.filter((r) => !r.imei).length,
+    }),
+    [Users]
   );
 
   const handleInputChange = (field, value) => {
@@ -452,7 +675,7 @@ const Users = () => {
   // };
 
   // console.log(selectedUser.photo_url)
-  const handleSaveUpdate = async () => {
+  const handleSaveUpdate = async (overrides = {}) => {
     try {
       const token = localStorage.getItem("token");
       const headers = { Authorization: `Bearer ${token}` };
@@ -460,19 +683,24 @@ const Users = () => {
       const userData = JSON.parse(userProfile); // Parse JSON
       const userId = userData[0]?.user_id;
 
+      const payloadUser = { ...selectedUser, ...overrides };
+
       const formData = new FormData();
-      formData.append("name", selectedUser.name);
-      formData.append("username", selectedUser.username);
-      formData.append("imei", selectedUser.imei);
-      formData.append("enabled", selectedUser.enabled);
+      formData.append("name", payloadUser.name);
+      formData.append("username", payloadUser.username);
+      // FormData mengubah null/undefined jadi string "null"/"undefined" yang
+      // dianggap nilai sah oleh BE (body.imei || null) → kirim string kosong
+      // supaya kolom imei benar-benar jadi NULL.
+      formData.append("imei", payloadUser.imei ?? "");
+      formData.append("enabled", payloadUser.enabled);
       // formData.append("role", selectedUser.role_id);
-      formData.append("upline", selectedUser.id_upline);
-      formData.append("id_category", selectedUser.id_category);
+      formData.append("upline", payloadUser.id_upline);
+      formData.append("id_category", payloadUser.id_category);
       formData.append("updated_by", userId);
       formData.append("updated_at", DateNow);
 
-      if (selectedUser.photo_url instanceof File) {
-        const file = selectedUser.photo_url;
+      if (payloadUser.photo_url instanceof File) {
+        const file = payloadUser.photo_url;
 
         // Validasi ukuran dan tipe file
         if (file.size > 5 * 1024 * 1024) {
@@ -492,7 +720,7 @@ const Users = () => {
 
         formData.append("photo_url", file);
       } else {
-        formData.append("photo_url", selectedUser.photo_url);
+        formData.append("photo_url", payloadUser.photo_url);
       }
       //       console.log("Form Data Content:");
       // for (let [key, value] of formData.entries()) {
@@ -500,7 +728,7 @@ const Users = () => {
       // }
 
       const responseUpdate = await axios.post(
-        `${VITE_API_URL}/users/update/${selectedUser.user_id}`,
+        `${VITE_API_URL}/users/update/${payloadUser.user_id}`,
         formData,
         {
           headers: {
@@ -517,32 +745,32 @@ const Users = () => {
 
       setUsers((prevUsers) =>
         prevUsers.map((item) =>
-          item.user_id === selectedUser.user_id
+          item.user_id === payloadUser.user_id
             ? {
-                ...selectedUser,
+                ...payloadUser,
                 category_user:
                   category.find(
                     (category) =>
                       category.value ===
-                      (isNaN(selectedUser.id_category)
+                      (isNaN(payloadUser.id_category)
                         ? null
-                        : parseInt(selectedUser.id_category))
+                        : parseInt(payloadUser.id_category))
                   )?.label || null,
                 role:
                   roles.find(
                     (r) =>
                       r.value ===
-                      (isNaN(selectedUser.role_id)
+                      (isNaN(payloadUser.role_id)
                         ? null
-                        : parseInt(selectedUser.role_id))
+                        : parseInt(payloadUser.role_id))
                   )?.label || "",
                 upline:
                   uplines.find(
                     (r) =>
                       r.value ===
-                      (isNaN(selectedUser.id_upline)
+                      (isNaN(payloadUser.id_upline)
                         ? null
-                        : parseInt(selectedUser.id_upline))
+                        : parseInt(payloadUser.id_upline))
                   )?.label || "",
                 photo_url: responseUpdate.data.data.photo_url || null,
               }
@@ -567,6 +795,24 @@ const Users = () => {
         "error"
       );
     }
+  };
+
+  // Reset IMEI: kosongkan kolom imei (jadi NULL) supaya karyawan bisa login
+  // dari HP baru — BE auto-daftarkan device saat login berikutnya.
+  const handleResetImei = async () => {
+    const confirm = await Swal.fire({
+      title: "Reset IMEI?",
+      html: `Perangkat terdaftar untuk <b>${selectedUser.name || "karyawan ini"}</b> akan dilepas.<br/>Karyawan bisa login dari HP baru, dan HP itu otomatis terdaftar.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Ya, reset",
+      cancelButtonText: "Batal",
+      confirmButtonColor: "#dc3545",
+    });
+    if (!confirm.isConfirmed) return;
+
+    setSelectedUser({ ...selectedUser, imei: "" });
+    await handleSaveUpdate({ imei: "" });
   };
 
   const columns = [
@@ -802,17 +1048,216 @@ const Users = () => {
       ),
     },
   ];
+  // Kolom UI baru: tanpa input filter di header (search global di toolbar).
+  const columnsV2 = [
+    {
+      name: "Karyawan",
+      minWidth: "240px",
+      wrap: true,
+      cell: (row) => (
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <img
+            src={row?.photo_url ? `${VITE_API_IMAGE}${row.photo_url}` : "/user-icon.jpg"}
+            alt={row.name}
+            style={{
+              width: "38px",
+              height: "38px",
+              borderRadius: "50%",
+              objectFit: "cover",
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+            onClick={() =>
+              handleImageClick(
+                row?.photo_url ? `${VITE_API_IMAGE}${row.photo_url}` : "/user-icon.jpg"
+              )
+            }
+          />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 600, color: "#263238" }}>{row.name}</div>
+            <div style={{ fontSize: "12px", color: "#90a4ae" }}>@{row.username}</div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      name: "Perangkat",
+      minWidth: "180px",
+      cell: (row) =>
+        row.imei ? (
+          <span
+            title={row.imei}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "5px",
+              maxWidth: "100%",
+              background: "#e8f5e9",
+              color: "#2e7d32",
+              borderRadius: "999px",
+              padding: "3px 10px",
+              fontSize: "12px",
+              fontWeight: 600,
+            }}
+          >
+            <i className="mdi mdi-cellphone-check"></i>
+            <span
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {row.imei}
+            </span>
+          </span>
+        ) : (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "5px",
+              background: "#fff3e0",
+              color: "#ef6c00",
+              borderRadius: "999px",
+              padding: "3px 10px",
+              fontSize: "12px",
+              fontWeight: 600,
+            }}
+          >
+            <i className="mdi mdi-cellphone-off"></i> Belum terdaftar
+          </span>
+        ),
+    },
+    {
+      name: "Job Title",
+      selector: (row) => row.category_user || "-",
+      wrap: true,
+    },
+    {
+      name: "Atasan",
+      selector: (row) => row.upline || "-",
+      wrap: true,
+    },
+    {
+      name: "Status",
+      width: "120px",
+      cell: (row) => (
+        <span
+          style={{
+            background: row.enabled ? "#e8f5e9" : "#ffebee",
+            color: row.enabled ? "#2e7d32" : "#c62828",
+            borderRadius: "999px",
+            padding: "3px 12px",
+            fontSize: "12px",
+            fontWeight: 600,
+          }}
+        >
+          {row.enabled ? "Active" : "Non Active"}
+        </span>
+      ),
+    },
+    {
+      name: "Aksi",
+      width: "170px",
+      cell: (row) => (
+        <div style={{ display: "flex", gap: "6px" }}>
+          <button
+            className="btn btn-sm"
+            title="Edit karyawan"
+            onClick={() => handleUpdate(row)}
+            style={{
+              background: "#fff8e1",
+              color: "#ef6c00",
+              border: "1px solid #ffe0b2",
+              borderRadius: "8px",
+              fontWeight: 600,
+            }}
+          >
+            <i className="mdi mdi-pencil"></i>
+          </button>
+          <button
+            className="btn btn-sm"
+            title="Hapus karyawan"
+            onClick={() => handleDelete(row)}
+            style={{
+              background: "#ffebee",
+              color: "#c62828",
+              border: "1px solid #ffcdd2",
+              borderRadius: "8px",
+              fontWeight: 600,
+            }}
+          >
+            <i className="mdi mdi-delete"></i>
+          </button>
+        </div>
+      ),
+    },
+  ];
+
   useEffect(() => {
     if (activeInput && inputRefs.current[activeInput]) {
       inputRefs.current[activeInput].focus();
     }
   }, [filterText, activeInput]);
 
+  // Segmented toggle UI Lama/Baru.
+  const uiToggle = (
+    <div
+      style={{
+        display: "inline-flex",
+        background: "#eceff1",
+        borderRadius: "999px",
+        padding: "3px",
+      }}
+    >
+      {[
+        { key: "baru", label: "UI Baru" },
+        { key: "lama", label: "UI Lama" },
+      ].map((opt) => (
+        <button
+          key={opt.key}
+          onClick={() => setUiMode(opt.key)}
+          style={{
+            border: "none",
+            borderRadius: "999px",
+            padding: "6px 16px",
+            fontSize: "13px",
+            fontWeight: 600,
+            cursor: "pointer",
+            background: uiMode === opt.key ? "#e74c3c" : "transparent",
+            color: uiMode === opt.key ? "#fff" : "#607d8b",
+          }}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div className="content-wrapper">
-      <div className="page-header">
-        <h3 className="page-title">Data Karyawan</h3>
+      <div
+        className="page-header"
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+      >
+        <h3 className="page-title" style={{ margin: 0 }}>Data Karyawan</h3>
+        {uiToggle}
       </div>
+      {uiMode === "baru" ? (
+        <UsersBaru
+          loading={loading}
+          error={error}
+          stats={stats}
+          rows={displayedRows}
+          columns={columnsV2}
+          globalSearch={globalSearch}
+          setGlobalSearch={setGlobalSearch}
+          quickFilter={quickFilter}
+          setQuickFilter={setQuickFilter}
+          onAdd={() => setAddModalVisible(true)}
+        />
+      ) : (
       <div className="row">
         <div className="col-lg-12 grid-margin stretch-card">
           <div className="card">
@@ -912,6 +1357,7 @@ const Users = () => {
           </div>
         </div>
       </div>
+      )}
       {isModalOpen && (
         <div
           style={{
@@ -1126,18 +1572,33 @@ const Users = () => {
                 </div>
 
                 <div className="form-group">
-                  <label>Imei</label>
-                  <input
-                    className="form-control"
-                    type="text"
-                    value={selectedUser.imei || ""}
-                    onChange={(e) =>
-                      setSelectedUser({
-                        ...selectedUser,
-                        imei: e.target.value,
-                      })
-                    }
-                  />
+                  <label>IMEI / Perangkat Terdaftar</label>
+                  <div className="d-flex gap-2">
+                    <input
+                      className="form-control"
+                      type="text"
+                      value={selectedUser.imei || ""}
+                      placeholder="Belum terdaftar"
+                      onChange={(e) =>
+                        setSelectedUser({
+                          ...selectedUser,
+                          imei: e.target.value,
+                        })
+                      }
+                    />
+                    <Button
+                      className="btn btn-outline-danger"
+                      style={{ whiteSpace: "nowrap" }}
+                      disabled={!selectedUser.imei}
+                      onClick={handleResetImei}
+                    >
+                      Reset
+                    </Button>
+                  </div>
+                  <small className="text-muted">
+                    Reset bila karyawan ganti HP. Perangkat baru otomatis
+                    terdaftar saat login berikutnya.
+                  </small>
                 </div>
 
                 {/* <div className="form-group">
@@ -1229,7 +1690,7 @@ const Users = () => {
           </Button>
           <Button
             className="btn btn-gradient-primary me-2"
-            onClick={handleSaveUpdate}
+            onClick={() => handleSaveUpdate()}
           >
             Simpan Perubahan
           </Button>
