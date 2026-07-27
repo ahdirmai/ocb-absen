@@ -119,6 +119,11 @@ const absenPoints = [
     title: "Shift lintas hari",
     body: "Shift yang masuk malam dan keluar besok pagi (mis. SUBUH) tetap dikenali. Tipe KELUAR-nya muncul keesokan harinya sampai lewat batas jam keluar.",
   },
+  {
+    icon: "mdi-calendar-edit",
+    title: "Tukar shift diajukan H-1",
+    body: "Perubahan jadwal yang sudah ditetapkan harus diajukan ke admin paling lambat H-1 (sehari sebelumnya). Pengajuan di hari-H tidak dilayani — jadwal yang berlaku tetap yang tercatat di sistem.",
+  },
 ];
 
 const lemburSteps = [
