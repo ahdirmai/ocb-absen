@@ -41,6 +41,8 @@ router.post('/sesi/:sesiId/delete', authenticateToken, absensiController.deleteS
 
 router.post('/koreksi/:absenId', authenticateToken, absensiController.koreksiAbsen);
 
+router.post('/delete/:absenId', authenticateToken, absensiController.deleteAbsensiRow);
+
 router.get('/rekap-kalender', authenticateToken, absensiController.rekapKalender);
 
 module.exports=router

@@ -472,6 +472,30 @@ const fillSesiSlot = async (conn, sesiId, direction, absensiId, updatedAt = null
   return result;
 };
 
+// Lepas 1 absensi dari sesinya (dipakai saat baris absensi dihapus).
+// Slot yang mereferensi absensi di-NULL-kan; bila kedua slot jadi kosong sesi
+// ikut dihapus, else status turun jadi 'incomplete'. Return aksi yg dilakukan.
+const detachAbsensiFromSesi = async (conn, absenId, updatedAt = null) => {
+  const sesi = await findSesiByAbsensiId(conn, absenId);
+  if (!sesi) return { action: "none" };
+
+  const isMasuk = String(sesi.masuk_absensi_id) === String(absenId);
+  const otherId = isMasuk ? sesi.keluar_absensi_id : sesi.masuk_absensi_id;
+
+  if (otherId == null) {
+    // Sesi jadi kosong total → hapus.
+    await conn.query(`DELETE FROM absensi_sesi WHERE sesi_id = ?`, [sesi.sesi_id]);
+    return { action: "deleted_sesi", sesi_id: sesi.sesi_id };
+  }
+
+  const col = isMasuk ? "masuk_absensi_id" : "keluar_absensi_id";
+  await conn.query(
+    `UPDATE absensi_sesi SET ${col} = NULL, status = 'incomplete', updated_at = ? WHERE sesi_id = ?`,
+    [updatedAt, sesi.sesi_id]
+  );
+  return { action: "detached", sesi_id: sesi.sesi_id, cleared: isMasuk ? "masuk" : "keluar" };
+};
+
 // Set status manual (enum guard).
 const updateSesiStatus = async (conn, sesiId, status, updatedAt = null) => {
   const allowed = ["open", "closed", "incomplete"];
@@ -512,6 +536,7 @@ module.exports = {
   matchSesi,
   unmatchSesi,
   fillSesiSlot,
+  detachAbsensiFromSesi,
   updateSesiStatus,
   deleteSesi,
 };

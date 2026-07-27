@@ -1010,6 +1010,56 @@ const koreksiAbsen = async (req, res) => {
   }
 };
 
+// POST /api/absensi/delete/:absenId — hapus 1 baris absensi (admin).
+// Hard delete (tabel tak punya kolom soft-delete) + snapshot ke log_activity.
+// Sesi terkait disesuaikan: slot yang mereferensi baris ini di-NULL-kan & status
+// jadi 'incomplete'; bila sesi jadi kosong total → sesi ikut dihapus.
+// File foto TIDAK dihapus dari disk.
+const deleteAbsensiRow = async (req, res) => {
+  const { absenId } = req.params;
+  const adminId = req.user?.id;
+  const updatedAt = moment().tz(timezone).format("YYYY-MM-DD HH:mm:ss");
+
+  const oldRow = await absensiModel.getAbsensiById(absenId);
+  if (!oldRow) {
+    return res.status(404).json({
+      message: "Data absensi tidak ditemukan.",
+      status: "failed",
+      status_code: "404",
+    });
+  }
+
+  const conn = await dbpool.getConnection();
+  try {
+    await conn.beginTransaction();
+    // Lepas dari sesi dulu agar snapshot efek sesi ikut tercatat di audit.
+    const sesiEffect = await sesiModel.detachAbsensiFromSesi(conn, absenId, updatedAt);
+    await absensiModel.deleteAbsensi(conn, absenId, adminId, {
+      ...oldRow,
+      sesi_effect: sesiEffect,
+    });
+    await conn.commit();
+
+    return res.json({
+      message: "Absensi dihapus.",
+      status: "success",
+      status_code: "200",
+      data: { absensi_id: Number(absenId), sesi_effect: sesiEffect },
+    });
+  } catch (error) {
+    await conn.rollback();
+    console.error("Error deleteAbsensiRow:", error);
+    return res.status(500).json({
+      message: "Internal Server Error",
+      status: "failed",
+      status_code: "500",
+      serverMessage: error.message,
+    });
+  } finally {
+    conn.release();
+  }
+};
+
 // List tipe absen per arah (masuk/keluar) untuk dropdown koreksi.
 // GET /api/absensi/tipe-absen?direction=masuk|keluar
 const listTipeAbsenByDirection = async (req, res) => {
@@ -1584,6 +1634,7 @@ module.exports = {
   cekFeePeruser,
   historyAbsensiAllUser,
   koreksiAbsen,
+  deleteAbsensiRow,
   listTipeAbsenByDirection,
   listSesiAbsensi,
   getSesiCandidates,

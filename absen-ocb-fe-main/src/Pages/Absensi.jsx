@@ -573,6 +573,38 @@ const Absensi = () => {
     }
   };
 
+  // Hapus 1 baris absensi. Sesi terkait ikut disesuaikan di BE (slot di-NULL-kan
+  // / sesi dihapus bila jadi kosong).
+  const handleDeleteAbsensi = async (row) => {
+    const ok = await Swal.fire({
+      title: "Hapus absensi?",
+      html: `<div style="font-size:13px;text-align:left">
+        <b>${row.nama_karyawan || "-"}</b><br/>
+        ${row.description || "-"}<br/>
+        ${row.absen_time ? format(new Date(row.absen_time), "dd MMM yyyy, HH:mm") : "-"}
+        <hr/>Baris absensi dihapus permanen. Sesi terkait ikut disesuaikan
+        (slot dikosongkan; sesi dihapus bila jadi kosong).</div>`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Ya, hapus",
+      cancelButtonText: "Batal",
+      confirmButtonColor: "#c62828",
+    });
+    if (!ok.isConfirmed) return;
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.post(
+        `${VITE_API_URL}/absensi/delete/${row.absensi_id}`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setAbsensies((prev) => prev.filter((item) => item.absensi_id !== row.absensi_id));
+      Swal.fire("Berhasil!", res.data?.message || "Absensi dihapus.", "success");
+    } catch (error) {
+      Swal.fire("Error!", error.response?.data?.message || error.message, "error");
+    }
+  };
+
   // Badge status berwarna (pill) untuk UI baru.
   const pill = (bg, text, label) => (
     <span
@@ -733,10 +765,11 @@ const Absensi = () => {
           {!isRejected(row) &&
             iconBtn("#fb8c00", "Ignore (karyawan bisa absen ulang)", () => handleIgnore(row), "mdi-cancel")}
           {iconBtn("#1e88e5", "Koreksi jam/status/catatan", () => handleKoreksi(row), "mdi-pencil")}
+          {iconBtn("#c62828", "Hapus absensi", () => handleDeleteAbsensi(row), "mdi-delete")}
         </div>
       ),
-      grow: 1.4,
-      width: "140px",
+      grow: 1.6,
+      width: "175px",
     },
   ];
 

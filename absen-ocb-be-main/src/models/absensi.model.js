@@ -204,6 +204,19 @@ const koreksiAbsen = async (conn, absenId, fields, adminId, oldRow) => {
     
 // }
 
+// Hapus 1 baris absensi (hard delete — tabel tak punya kolom soft-delete).
+// Snapshot baris lama diaudit ke log_activity untuk jejak/recovery manual.
+// File foto TIDAK dihapus dari disk (aman bila perlu recovery).
+const deleteAbsensi = async (conn, absenId, adminId, oldRow) => {
+    const ringkas = JSON.stringify({ absensi_id: Number(absenId), deleted: oldRow });
+    await conn.query(
+        `INSERT INTO log_activity (table_name, action, dataquery, user_id) VALUES (?, ?, ?, ?)`,
+        ['absensi', 'DELETE', ringkas, adminId]
+    );
+    const [result] = await conn.query('DELETE FROM absensi WHERE absensi_id = ?', [absenId]);
+    return result;
+}
+
 const historyAbsensiPerUser = async (userId, body) => {
     let SQLQuery = `
         SELECT
@@ -603,6 +616,7 @@ module.exports={
     validasiAbsen,
     getAbsensiById,
     koreksiAbsen,
+    deleteAbsensi,
     getPotonganLate,
     cekAbesensiToday,
     cekAbsensiTodayByTimeCategory,

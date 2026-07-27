@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- **Hapus histori absensi (admin)** (`POST /api/absensi/delete/:absenId`, tombol di page Absensi) — hapus 1 baris `absensi` beserta penyesuaian sesi. Hard delete (tabel tak punya kolom soft-delete) + snapshot baris lama ke `log_activity` (action `DELETE`) untuk jejak/recovery manual. **Efek sesi** (`detachAbsensiFromSesi`): slot sesi yang mereferensi baris ini di-NULL-kan & status turun jadi `incomplete`; bila sesi jadi kosong total (dua slot NULL) sesi ikut dihapus. Transaksional. File foto TIDAK dihapus dari disk.
 - **Page baru "Kelola Sesi Absensi"** (`SesiAbsensi.jsx`, `/sesi-absensi`) — admin view + manage `absensi_sesi` (pairing masuk↔keluar) via UI, gantikan kerja manual `scripts/fix-cross-date-sesi.js`.
   - View: DataTable server-side pagination (65k+ baris), filter status (default incomplete) + rentang **per-hari/minggu/bulan** (default hari) + cari karyawan. Kolom masuk/keluar jam+shift, badge status berwarna, badge Lembur, penanda "ada pasangan".
   - BE list (`absensiSesi.model.js listSesi`/`countSesi`): JOIN user+retail+tipe_absen (masuk & keluar), flag `has_candidate` (EXISTS sesi incomplete lawan-arah user+shift+is_lembur sama, window 20h) untuk highlight orphan berpasangan.
