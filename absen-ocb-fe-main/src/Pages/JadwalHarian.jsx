@@ -47,7 +47,35 @@ const shiftCode = (shiftName) => {
 
 const CELL_BORDER = "1px solid #dee2e6";
 
+// Deteksi viewport mobile (< 768px) untuk layout responsif.
+const useIsMobile = (breakpoint = 768) => {
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" ? window.innerWidth < breakpoint : false
+  );
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < breakpoint);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [breakpoint]);
+  return isMobile;
+};
+
+const statChip = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "6px",
+  background: "#fff",
+  border: "1px solid #eceff1",
+  borderRadius: "12px",
+  padding: "8px 14px",
+  fontSize: "12px",
+  color: "#607d8b",
+  boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+};
+const statNum = { fontSize: "17px", fontWeight: 700, color: "#37474f" };
+
 const JadwalHarian = () => {
+  const isMobile = useIsMobile();
   const [retails, setRetails] = useState([]);
   const [selectedRetail, setSelectedRetail] = useState(null);
 
@@ -62,6 +90,9 @@ const JadwalHarian = () => {
   const [modalCell, setModalCell] = useState(null); // { user_id, user_name, tanggal, existing }
   const [modalKategori, setModalKategori] = useState(null);
   const [savingModal, setSavingModal] = useState(false);
+
+  // Mobile: tanggal aktif untuk list per-hari (yyyy-MM-dd). Default hari ini.
+  const [selectedDay, setSelectedDay] = useState(() => format(new Date(), "yyyy-MM-dd"));
 
   // Import Excel state
   const [importModalVisible, setImportModalVisible] = useState(false);
@@ -153,6 +184,16 @@ const JadwalHarian = () => {
     return arr;
   }, [monthDate]);
 
+  // Jaga selectedDay tetap dalam bulan aktif (mobile list per-hari).
+  useEffect(() => {
+    if (!days.some((dy) => dy.tanggal === selectedDay)) {
+      const todayStr = format(new Date(), "yyyy-MM-dd");
+      const match = days.find((dy) => dy.tanggal === todayStr);
+      setSelectedDay(match ? match.tanggal : days[0]?.tanggal || "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days]);
+
   // --- Lookup jadwal[user_id][tanggal] = row ---
   const jadwalMap = useMemo(() => {
     const map = {};
@@ -162,6 +203,18 @@ const JadwalHarian = () => {
     }
     return map;
   }, [monthJadwal]);
+
+  // Ringkasan bulan: total sel terisi, karyawan, hari, coverage%.
+  const stats = useMemo(() => {
+    const totalCells = employees.length * days.length;
+    const filled = monthJadwal.length;
+    return {
+      filled,
+      employees: employees.length,
+      days: days.length,
+      coverage: totalCells > 0 ? Math.round((filled / totalCells) * 100) : 0,
+    };
+  }, [monthJadwal, employees, days]);
 
   // Encode pasangan shift sebagai "masuk_id:keluar_id" untuk dropdown value.
   const encodeShift = (masukId, keluarId) => `${masukId}:${keluarId}`;
@@ -317,21 +370,47 @@ const JadwalHarian = () => {
         <div className="col-12 grid-margin stretch-card">
           <div className="card">
             <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center mb-3">
-                <h4 className="card-title mb-0">Jadwal Shift Harian (Sales Toko / Trainee)</h4>
-                <div className="d-flex gap-2">
-                  <button className="btn btn-outline-info btn-sm" onClick={handleDownloadTemplate}>
-                    Download Template
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: "12px",
+                  marginBottom: "18px",
+                }}
+              >
+                <div>
+                  <h4 className="card-title mb-0" style={{ fontSize: isMobile ? "16px" : "18px" }}>
+                    Jadwal Shift Harian
+                  </h4>
+                  <span style={{ fontSize: "12px", color: "#90a4ae" }}>
+                    Sales Toko / Trainee
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  <button
+                    className="btn btn-outline-info btn-sm"
+                    style={{ borderRadius: "9px", fontWeight: 600 }}
+                    onClick={handleDownloadTemplate}
+                  >
+                    <i className="mdi mdi-download"></i>{isMobile ? "" : " Template"}
                   </button>
-                  <button className="btn btn-outline-success btn-sm" onClick={() => { setImportModalVisible(true); setImportResult(null); setImportFile(null); }}>
-                    Import Excel
+                  <button
+                    className="btn btn-outline-success btn-sm"
+                    style={{ borderRadius: "9px", fontWeight: 600 }}
+                    onClick={() => { setImportModalVisible(true); setImportResult(null); setImportFile(null); }}
+                  >
+                    <i className="mdi mdi-file-excel"></i>{isMobile ? "" : " Import Excel"}
                   </button>
                 </div>
               </div>
 
               {/* Step 1: Pilih OC */}
-              <div className="mb-4" style={{ maxWidth: "360px" }}>
-                <label className="form-label">Pilih OC / Retail</label>
+              <div className="mb-4" style={{ maxWidth: isMobile ? "100%" : "360px" }}>
+                <label className="form-label" style={{ fontSize: "12px", fontWeight: 600, color: "#607d8b" }}>
+                  Pilih OC / Retail
+                </label>
                 <Select
                   options={retails}
                   value={selectedRetail}
@@ -345,41 +424,71 @@ const JadwalHarian = () => {
               {/* Step 2: Matrix karyawan x tanggal */}
               {selectedRetail && (
                 <>
-                  <div className="d-flex justify-content-between align-items-center mb-3">
+                  {/* Month nav (pill) */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "10px",
+                      marginBottom: "14px",
+                    }}
+                  >
                     <button
-                      className="btn btn-outline-secondary btn-sm"
+                      className="btn btn-light btn-sm"
+                      style={{ borderRadius: "50%", width: "36px", height: "36px", padding: 0, boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}
                       onClick={() => setMonthDate((d) => subMonths(d, 1))}
+                      aria-label="Bulan sebelumnya"
                     >
-                      &laquo; Prev
+                      <i className="mdi mdi-chevron-left" style={{ fontSize: "20px" }}></i>
                     </button>
-                    <h5 className="mb-0">{format(monthDate, "MMMM yyyy")}</h5>
+                    <h5 className="mb-0" style={{ minWidth: isMobile ? "150px" : "180px", textAlign: "center", fontWeight: 700, color: "#37474f" }}>
+                      {format(monthDate, "MMMM yyyy")}
+                    </h5>
                     <button
-                      className="btn btn-outline-secondary btn-sm"
+                      className="btn btn-light btn-sm"
+                      style={{ borderRadius: "50%", width: "36px", height: "36px", padding: 0, boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}
                       onClick={() => setMonthDate((d) => addMonths(d, 1))}
+                      aria-label="Bulan berikutnya"
                     >
-                      Next &raquo;
+                      <i className="mdi mdi-chevron-right" style={{ fontSize: "20px" }}></i>
                     </button>
                   </div>
 
-                  {/* Legend */}
-                  <div className="mb-2" style={{ fontSize: "12px" }}>
+                  {/* Stats bar */}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "14px" }}>
+                    <span style={statChip}>
+                      <i className="mdi mdi-account-group" style={{ color: "#2471a3" }}></i>
+                      <span style={statNum}>{stats.employees}</span> Karyawan
+                    </span>
+                    <span style={statChip}>
+                      <i className="mdi mdi-calendar-check" style={{ color: "#27ae60" }}></i>
+                      <span style={statNum}>{stats.filled}</span> Shift terisi
+                    </span>
+                    <span style={statChip}>
+                      <i className="mdi mdi-chart-donut" style={{ color: "#8e44ad" }}></i>
+                      <span style={statNum}>{stats.coverage}%</span> Coverage
+                    </span>
+                  </div>
+
+                  {/* Legend chips */}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "12px" }}>
                     {kategoriList.map((k) => (
                       <span
                         key={k.shift_name}
-                        className="me-3"
-                        style={{ display: "inline-flex", alignItems: "center" }}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "5px",
+                          background: shiftColor(k.shift_name),
+                          color: "#37474f",
+                          borderRadius: "999px",
+                          padding: "3px 11px",
+                          fontSize: "11px",
+                          fontWeight: 600,
+                        }}
                       >
-                        <span
-                          style={{
-                            display: "inline-block",
-                            width: "14px",
-                            height: "14px",
-                            background: shiftColor(k.shift_name),
-                            borderRadius: "3px",
-                            marginRight: "4px",
-                          }}
-                        />
-                        {shiftCode(k.shift_name)} = {k.shift_name}
+                        <b>{shiftCode(k.shift_name)}</b> {k.shift_name}
                       </span>
                     ))}
                   </div>
@@ -390,6 +499,118 @@ const JadwalHarian = () => {
                     <p className="text-muted">
                       Belum ada karyawan terhubung ke OC ini.
                     </p>
+                  ) : isMobile ? (
+                    /* ── MOBILE: list per-hari ── */
+                    <div>
+                      {/* Strip tanggal */}
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "6px",
+                          overflowX: "auto",
+                          paddingBottom: "8px",
+                          marginBottom: "12px",
+                          WebkitOverflowScrolling: "touch",
+                        }}
+                      >
+                        {days.map((day) => {
+                          const active = day.tanggal === selectedDay;
+                          return (
+                            <button
+                              key={day.tanggal}
+                              onClick={() => setSelectedDay(day.tanggal)}
+                              style={{
+                                flex: "0 0 auto",
+                                width: "48px",
+                                border: "none",
+                                borderRadius: "12px",
+                                padding: "8px 0",
+                                cursor: "pointer",
+                                background: active
+                                  ? "#2471a3"
+                                  : day.dow === 0
+                                    ? "#ffebee"
+                                    : "#f4f6f8",
+                                color: active ? "#fff" : day.dow === 0 ? "#c62828" : "#546e7a",
+                                boxShadow: active ? "0 2px 6px rgba(36,113,163,0.35)" : "none",
+                              }}
+                            >
+                              <div style={{ fontSize: "10px", opacity: 0.85 }}>
+                                {DAY_INITIAL[day.dow]}
+                              </div>
+                              <div style={{ fontSize: "17px", fontWeight: 700, lineHeight: 1.1 }}>
+                                {day.d}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Kartu karyawan hari terpilih */}
+                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                        {employees.map((u) => {
+                          const day = days.find((dy) => dy.tanggal === selectedDay);
+                          const row = jadwalMap[u.value]?.[selectedDay];
+                          return (
+                            <div
+                              key={u.value}
+                              onClick={() => day && openCell(u, day)}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                gap: "10px",
+                                background: "#fff",
+                                border: "1px solid #eceff1",
+                                borderLeft: `4px solid ${row ? shiftColor(row.shift_name) : "#e0e0e0"}`,
+                                borderRadius: "12px",
+                                padding: "12px 14px",
+                                cursor: "pointer",
+                                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                              }}
+                            >
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div style={{ fontWeight: 600, color: "#37474f", fontSize: "14px" }}>
+                                  {u.label}
+                                </div>
+                                <div style={{ fontSize: "12px", color: row ? "#607d8b" : "#b0bec5", marginTop: "2px" }}>
+                                  {row ? row.shift_name : "Belum ada shift"}
+                                </div>
+                              </div>
+                              {row ? (
+                                <span
+                                  style={{
+                                    flex: "0 0 auto",
+                                    background: shiftColor(row.shift_name),
+                                    color: "#37474f",
+                                    borderRadius: "10px",
+                                    padding: "6px 12px",
+                                    fontSize: "13px",
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  {shiftCode(row.shift_name)}
+                                </span>
+                              ) : (
+                                <span
+                                  style={{
+                                    flex: "0 0 auto",
+                                    color: "#2471a3",
+                                    fontSize: "13px",
+                                    fontWeight: 600,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "3px",
+                                  }}
+                                >
+                                  <i className="mdi mdi-plus-circle-outline"></i> Set
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   ) : (
                     <div
                       style={{
@@ -414,10 +635,14 @@ const JadwalHarian = () => {
                                 left: 0,
                                 background: "#f8f9fa",
                                 zIndex: 2,
-                                minWidth: "180px",
+                                minWidth: isMobile ? "120px" : "180px",
                                 padding: "8px 10px",
                                 verticalAlign: "middle",
                                 border: CELL_BORDER,
+                                fontSize: "12px",
+                                color: "#546e7a",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.3px",
                               }}
                             >
                               Karyawan
@@ -428,7 +653,7 @@ const JadwalHarian = () => {
                                 style={{
                                   textAlign: "center",
                                   padding: "6px 0",
-                                  minWidth: "40px",
+                                  minWidth: isMobile ? "44px" : "40px",
                                   fontSize: "12px",
                                   lineHeight: 1.25,
                                   border: CELL_BORDER,
@@ -455,12 +680,14 @@ const JadwalHarian = () => {
                                   zIndex: 1,
                                   fontSize: "13px",
                                   padding: "8px 10px",
-                                  minWidth: "180px",
+                                  minWidth: isMobile ? "120px" : "180px",
                                   whiteSpace: "nowrap",
                                   overflow: "hidden",
                                   textOverflow: "ellipsis",
-                                  maxWidth: "220px",
+                                  maxWidth: isMobile ? "140px" : "220px",
                                   border: CELL_BORDER,
+                                  fontWeight: 600,
+                                  color: "#37474f",
                                 }}
                                 title={u.label}
                               >
@@ -481,11 +708,12 @@ const JadwalHarian = () => {
                                       textAlign: "center",
                                       cursor: "pointer",
                                       padding: 0,
-                                      height: "40px",
-                                      minWidth: "40px",
+                                      height: isMobile ? "46px" : "40px",
+                                      minWidth: isMobile ? "44px" : "40px",
                                       fontSize: "13px",
                                       fontWeight: 700,
                                       border: CELL_BORDER,
+                                      color: row ? "#37474f" : "#cfd8dc",
                                       background: row
                                         ? shiftColor(row.shift_name)
                                         : day.dow === 0
@@ -493,7 +721,7 @@ const JadwalHarian = () => {
                                           : "#fff",
                                     }}
                                   >
-                                    {row ? shiftCode(row.shift_name) : ""}
+                                    {row ? shiftCode(row.shift_name) : "+"}
                                   </td>
                                 );
                               })}

@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+/* eslint-disable react/prop-types */
+import { useState, useRef, useEffect, useMemo } from "react";
 import axios from "axios";
 import Swal from "sweetalert2";
 import DataTable from "react-data-table-component";
@@ -18,10 +19,195 @@ const KatTime = [
   { value: "malam", label: "Malam" },
 ];
 
+// ── UI BARU (modern clean) ──────────────────────────────────────────────
+const StatCard = ({ label, value, color, icon }) => (
+  <div
+    style={{
+      flex: "1 1 140px",
+      background: "#fff",
+      borderRadius: "14px",
+      padding: "16px 18px",
+      boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+      display: "flex",
+      alignItems: "center",
+      gap: "12px",
+    }}
+  >
+    <div
+      style={{
+        width: "42px",
+        height: "42px",
+        borderRadius: "12px",
+        background: `${color}1a`,
+        color,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: "22px",
+        flexShrink: 0,
+      }}
+    >
+      <i className={`mdi ${icon}`}></i>
+    </div>
+    <div>
+      <div style={{ fontSize: "22px", fontWeight: 700, color: "#263238", lineHeight: 1.1 }}>
+        {value}
+      </div>
+      <div style={{ fontSize: "12px", color: "#90a4ae" }}>{label}</div>
+    </div>
+  </div>
+);
+
+const CatAbsenBaru = ({
+  loading,
+  error,
+  stats,
+  rows,
+  columns,
+  globalSearch,
+  setGlobalSearch,
+  quickFilter,
+  setQuickFilter,
+  onAdd,
+}) => {
+  const chips = [
+    { key: "semua", label: "Semua" },
+    { key: "pagi", label: "Pagi" },
+    { key: "sore", label: "Sore" },
+    { key: "malam", label: "Malam" },
+    { key: "cross", label: "Lintas Hari" },
+    { key: "unpaired", label: "Tanpa Pasangan" },
+  ];
+
+  return (
+    <div style={{ padding: "4px 2px" }}>
+      {/* Stat ringkasan */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", marginBottom: "16px" }}>
+        <StatCard label="Total Tipe" value={stats.total} color="#455a64" icon="mdi-tag-multiple" />
+        <StatCard label="Pasangan Shift" value={stats.pairs} color="#2e7d32" icon="mdi-swap-horizontal" />
+        <StatCard label="Tanpa Pasangan" value={stats.unpaired} color="#c62828" icon="mdi-link-off" />
+        <StatCard label="Lintas Hari" value={stats.cross} color="#8e24aa" icon="mdi-calendar-arrow-right" />
+      </div>
+
+      {/* Toolbar */}
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: "14px",
+          padding: "16px",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+          marginBottom: "16px",
+        }}
+      >
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "flex-end" }}>
+          <div style={{ flex: "2 1 240px" }}>
+            <label style={{ fontSize: "12px", color: "#607d8b", fontWeight: 600 }}>Cari</label>
+            <div style={{ position: "relative" }}>
+              <i
+                className="mdi mdi-magnify"
+                style={{ position: "absolute", left: "10px", top: "9px", color: "#b0bec5", fontSize: "18px" }}
+              ></i>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Code, deskripsi, kategori, grup..."
+                value={globalSearch}
+                onChange={(e) => setGlobalSearch(e.target.value)}
+                style={{ paddingLeft: "34px", borderRadius: "10px" }}
+              />
+            </div>
+          </div>
+          <button
+            className="btn"
+            onClick={onAdd}
+            style={{ background: "#2471a3", color: "#fff", borderRadius: "10px", fontWeight: 600 }}
+          >
+            <i className="mdi mdi-plus"></i> Tambah Tipe Absen
+          </button>
+        </div>
+
+        {/* Quick filter chips */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "14px" }}>
+          {chips.map((c) => (
+            <button
+              key={c.key}
+              onClick={() => setQuickFilter(c.key)}
+              style={{
+                border: "1px solid",
+                borderColor: quickFilter === c.key ? "#e74c3c" : "#cfd8dc",
+                background: quickFilter === c.key ? "#e74c3c" : "#fff",
+                color: quickFilter === c.key ? "#fff" : "#607d8b",
+                borderRadius: "999px",
+                padding: "5px 14px",
+                fontSize: "12px",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tabel */}
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: "14px",
+          padding: "6px",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+        }}
+      >
+        {loading ? (
+          <div style={{ textAlign: "center", padding: "40px", color: "#90a4ae" }}>
+            <i className="mdi mdi-loading mdi-spin" style={{ fontSize: "28px" }}></i>
+            <p style={{ marginTop: "8px" }}>Memuat data...</p>
+          </div>
+        ) : error ? (
+          <div style={{ textAlign: "center", padding: "40px", color: "#c62828" }}>
+            <i className="mdi mdi-alert-circle" style={{ fontSize: "28px" }}></i>
+            <p style={{ marginTop: "8px" }}>Error: {error}</p>
+          </div>
+        ) : rows.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "48px", color: "#b0bec5" }}>
+            <i className="mdi mdi-tag-off" style={{ fontSize: "36px" }}></i>
+            <p style={{ marginTop: "8px" }}>Tidak ada tipe absen.</p>
+          </div>
+        ) : (
+          <DataTable
+            keyField="id"
+            columns={columns}
+            data={rows}
+            pagination
+            responsive
+            highlightOnHover
+            fixedHeader
+            fixedHeaderScrollHeight="62vh"
+            customStyles={{
+              headCells: {
+                style: {
+                  background: "#f5f7fa",
+                  color: "#546e7a",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.3px",
+                },
+              },
+              rows: { style: { minHeight: "56px", fontSize: "13px" } },
+              cells: { style: { paddingTop: "6px", paddingBottom: "6px" } },
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+};
+
 const CatAbsen = () => {
   const [catabsen, setcatabsen] = useState([]);
   const [error, setError] = useState(null);
-  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [addLoading, setAddLoading] = useState(false);
   const [selectedCatabsen, setSelectedCatabsen] = useState({});
@@ -52,6 +238,17 @@ const CatAbsen = () => {
   const inputRefs = useRef({});
   const [activeInput, setActiveInput] = useState(null);
   const [selectedKatTime, setSelectedKatTime] = useState(null);
+
+  // UI baru (toggle dalam halaman). Default "baru", persist ke localStorage.
+  const [uiMode, setUiMode] = useState(
+    () => localStorage.getItem("typeabsen_ui_mode") || "baru"
+  );
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [quickFilter, setQuickFilter] = useState("semua"); // semua|pagi|sore|malam|cross
+
+  useEffect(() => {
+    localStorage.setItem("typeabsen_ui_mode", uiMode);
+  }, [uiMode]);
 
   const formatAbsenData = (data) => {
     if (!Array.isArray(data)) {
@@ -117,6 +314,111 @@ const CatAbsen = () => {
       return itemValue.includes(filterValue);
     })
   );
+
+  const isCross = (row) => Number(row.is_cross_date) === 1;
+
+  // Normalisasi nama untuk pairing: lowercase, rapatkan spasi, buang trailing.
+  // Jaga "Designer " == "Designer", "BM - U4" == "BM -U4".
+  const normName = (name) =>
+    String(name || "").toLowerCase().replace(/\s+/g, " ").trim();
+
+  // Arah absen dari description (selaras BE absenDirectionOf).
+  const dirOf = (row) => {
+    const d = String(row.description || "").toLowerCase();
+    if (d.includes("keluar") || d.includes("pulang")) return "keluar";
+    if (d.includes("masuk")) return "masuk";
+    return "";
+  };
+
+  // Peta pasangan by nama ternormalisasi: { key: {masuk, keluar} }.
+  // Dipakai untuk badge Arah + tandai tipe tanpa pasangan (pairing sesi gagal).
+  const pairMap = useMemo(() => {
+    const map = {};
+    catabsen.forEach((row) => {
+      const key = normName(row.name);
+      if (!map[key]) map[key] = { masuk: 0, keluar: 0 };
+      const dir = dirOf(row);
+      if (dir === "masuk") map[key].masuk += 1;
+      else if (dir === "keluar") map[key].keluar += 1;
+    });
+    return map;
+  }, [catabsen]);
+
+  // Baris UI BARU: 1 baris per shift (nama), gabung masuk+keluar.
+  // Search global (multi-field) + quick filter chip, diurut by nama.
+  const mergedRows = useMemo(() => {
+    const q = globalSearch.trim().toLowerCase();
+    const groups = {};
+    catabsen.forEach((row) => {
+      const key = normName(row.name);
+      if (!groups[key]) {
+        groups[key] = { key, id: key, name: row.name, masuk: null, keluar: null };
+      }
+      const dir = dirOf(row);
+      if (dir === "masuk") {
+        if (!groups[key].masuk) groups[key].masuk = row;
+        groups[key].name = row.name; // prefer nama dari baris masuk
+      } else if (dir === "keluar") {
+        if (!groups[key].keluar) groups[key].keluar = row;
+        if (!groups[key].masuk) groups[key].name = row.name;
+      }
+    });
+
+    let list = Object.values(groups).map((g) => {
+      const ref = g.masuk || g.keluar;
+      return {
+        ...g,
+        kategori_absen: ref?.kategori_absen || "-",
+        fee: ref?.fee || 0,
+        category_user: ref?.category_user || "-",
+        is_cross_date: g.masuk?.is_cross_date || g.keluar?.is_cross_date || 0,
+      };
+    });
+
+    list = list.filter((g) => {
+      if (q) {
+        const hay = [
+          g.name,
+          g.masuk?.description,
+          g.keluar?.description,
+          g.kategori_absen,
+          g.category_user,
+        ]
+          .map((v) => String(v || "").toLowerCase())
+          .join(" ");
+        if (!hay.includes(q)) return false;
+      }
+      const kat = String(g.kategori_absen || "").toLowerCase();
+      switch (quickFilter) {
+        case "pagi":
+          return kat.includes("pagi");
+        case "sore":
+          return kat.includes("sore");
+        case "malam":
+          return kat.includes("malam");
+        case "cross":
+          return isCross(g);
+        case "unpaired":
+          return !g.masuk || !g.keluar;
+        default:
+          return true;
+      }
+    });
+
+    return list.sort((a, b) => a.key.localeCompare(b.key));
+  }, [catabsen, globalSearch, quickFilter]);
+
+  const stats = useMemo(() => {
+    const pairs = Object.values(pairMap).filter(
+      (p) => p.masuk > 0 && p.keluar > 0
+    ).length;
+    return {
+      total: mergedRows.length,
+      cross: mergedRows.filter((r) => isCross(r)).length,
+      pairs,
+      unpaired: mergedRows.filter((r) => !r.masuk || !r.keluar).length,
+    };
+  }, [mergedRows, pairMap]);
 
   useEffect(() => {
     const fetchGroup = async () => {
@@ -592,17 +894,223 @@ const CatAbsen = () => {
     },
   ];
 
+  // Badge pill + tombol ikon untuk UI baru.
+  const pill = (bg, text, label) => (
+    <span
+      style={{
+        display: "inline-block",
+        padding: "3px 10px",
+        borderRadius: "999px",
+        background: bg,
+        color: text,
+        fontSize: "11px",
+        fontWeight: 700,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </span>
+  );
+  const katColor = (kat) => {
+    const k = String(kat || "").toLowerCase();
+    if (k.includes("pagi")) return { bg: "#e8f5e9", text: "#2e7d32" };
+    if (k.includes("sore")) return { bg: "#fff3e0", text: "#e65100" };
+    if (k.includes("malam")) return { bg: "#ede7f6", text: "#5e35b1" };
+    return { bg: "#eceff1", text: "#607d8b" };
+  };
+
+  // Sel arah (masuk/keluar) di baris gabungan: jam + aksi mini.
+  const dirCell = (item, dirLabel, tone) => {
+    if (!item) {
+      return (
+        <span style={{ fontSize: "11px", color: "#cfd8dc", fontStyle: "italic" }}>
+          <i className="mdi mdi-link-off" style={{ marginRight: "3px", color: "#e57373" }}></i>
+          belum ada
+        </span>
+      );
+    }
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "3px 0" }}>
+        <span
+          style={{
+            fontSize: "12px",
+            color: "#37474f",
+            fontWeight: 600,
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {item.start_time || "-"}
+        </span>
+        <span style={{ display: "inline-flex", gap: "2px" }}>
+          <button
+            onClick={() => handleUpdate(item)}
+            title={`Edit ${dirLabel}`}
+            style={{
+              border: "none",
+              background: tone,
+              color: "#fff",
+              width: "24px",
+              height: "24px",
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontSize: "12px",
+            }}
+          >
+            <i className="mdi mdi-pencil"></i>
+          </button>
+          <button
+            onClick={() => handleDelete(item)}
+            title={`Hapus ${dirLabel}`}
+            style={{
+              border: "none",
+              background: "#eceff1",
+              color: "#c62828",
+              width: "24px",
+              height: "24px",
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontSize: "12px",
+            }}
+          >
+            <i className="mdi mdi-delete"></i>
+          </button>
+        </span>
+      </div>
+    );
+  };
+
+  // Kolom UI BARU: 1 baris per shift, masuk+keluar berdampingan.
+  const columnsV2 = [
+    {
+      name: "Shift / Code",
+      sortable: true,
+      selector: (row) => row.key,
+      cell: (row) => {
+        const unpaired = !row.masuk || !row.keluar;
+        return (
+          <div style={{ padding: "4px 0" }}>
+            <div style={{ fontWeight: 600, color: "#2c3e50", fontSize: "13px", display: "flex", alignItems: "center", gap: "5px" }}>
+              {row.name}
+              {unpaired && (
+                <i
+                  className="mdi mdi-link-off"
+                  title="Pasangan tidak lengkap (masuk/keluar). Pairing sesi bisa gagal."
+                  style={{ color: "#c62828", fontSize: "14px" }}
+                ></i>
+              )}
+            </div>
+            {row.category_user && row.category_user !== "-" && (
+              <div style={{ fontSize: "11px", color: "#90a4ae" }}>{row.category_user}</div>
+            )}
+          </div>
+        );
+      },
+      grow: 2,
+    },
+    {
+      name: "Masuk",
+      cell: (row) => dirCell(row.masuk, "masuk", "#43a047"),
+      width: "120px",
+    },
+    {
+      name: "Keluar",
+      cell: (row) => dirCell(row.keluar, "keluar", "#e53935"),
+      width: "120px",
+    },
+    {
+      name: "Kategori",
+      sortable: true,
+      selector: (row) => row.kategori_absen || "",
+      cell: (row) => {
+        const c = katColor(row.kategori_absen);
+        return (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}>
+            {row.kategori_absen && row.kategori_absen !== "-"
+              ? pill(c.bg, c.text, row.kategori_absen)
+              : <span style={{ color: "#b0bec5", fontSize: "12px" }}>-</span>}
+            {isCross(row) && pill("#f3e5f5", "#8e24aa", "+1 hari")}
+          </span>
+        );
+      },
+      width: "150px",
+    },
+    {
+      name: "Fee",
+      sortable: true,
+      selector: (row) => Number(row.fee) || 0,
+      cell: (row) => (
+        <span style={{ fontSize: "12px", color: "#455a64", fontWeight: 600 }}>
+          {Number(row.fee || 0).toLocaleString("id-ID")}
+        </span>
+      ),
+      width: "100px",
+    },
+  ];
+
   useEffect(() => {
     if (activeInput && inputRefs.current[activeInput]) {
       inputRefs.current[activeInput].focus();
     }
   }, [filterText, activeInput]);
 
+  // Segmented toggle UI Lama/Baru.
+  const uiToggle = (
+    <div
+      style={{
+        display: "inline-flex",
+        background: "#eceff1",
+        borderRadius: "999px",
+        padding: "3px",
+      }}
+    >
+      {[
+        { key: "baru", label: "UI Baru" },
+        { key: "lama", label: "UI Lama" },
+      ].map((opt) => (
+        <button
+          key={opt.key}
+          onClick={() => setUiMode(opt.key)}
+          style={{
+            border: "none",
+            borderRadius: "999px",
+            padding: "6px 16px",
+            fontSize: "13px",
+            fontWeight: 600,
+            cursor: "pointer",
+            background: uiMode === opt.key ? "#e74c3c" : "transparent",
+            color: uiMode === opt.key ? "#fff" : "#607d8b",
+          }}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div className="content-wrapper">
-      <div className="page-header">
-        <h3 className="page-title">Data Tipe Absen</h3>
+      <div
+        className="page-header"
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+      >
+        <h3 className="page-title" style={{ margin: 0 }}>Data Tipe Absen</h3>
+        {uiToggle}
       </div>
+
+      {uiMode === "baru" ? (
+        <CatAbsenBaru
+          loading={loading}
+          error={error}
+          stats={stats}
+          rows={mergedRows}
+          columns={columnsV2}
+          globalSearch={globalSearch}
+          setGlobalSearch={setGlobalSearch}
+          quickFilter={quickFilter}
+          setQuickFilter={setQuickFilter}
+          onAdd={() => setAddModalVisible(true)}
+        />
+      ) : (
       <div className="row">
         <div className="col-lg-12 grid-margin stretch-card">
           <div className="card">
@@ -685,6 +1193,7 @@ const CatAbsen = () => {
           </div>
         </div>
       </div>
+      )}
 
       {/* Modal Tambah User */}
       <Modal
@@ -833,164 +1342,220 @@ const CatAbsen = () => {
         </Modal.Footer>
       </Modal>
 
-      <Modal show={modalVisible} onHide={() => setModalVisible(false)}>
-        <Modal.Header closeButton>
-          <Modal.Title>Edit Tipe Absen</Modal.Title>
+      <Modal show={modalVisible} onHide={() => setModalVisible(false)} centered size="lg">
+        <Modal.Header closeButton style={{ borderBottom: "1px solid #eceff1" }}>
+          <Modal.Title style={{ fontSize: "18px", fontWeight: 700, color: "#263238" }}>
+            <i className="mdi mdi-tag-edit" style={{ color: "#fb8c00", marginRight: "8px" }}></i>
+            Edit Tipe Absen
+          </Modal.Title>
         </Modal.Header>
-        <Modal.Body>
-          <div className="card">
-            <div className="card-body">
-              <div className="form-group">
-                <label>kategori Absen</label>
+        <Modal.Body style={{ background: "#f7f9fb", padding: "20px" }}>
+          {/* Ringkasan */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: "10px",
+              background: "#fff",
+              borderRadius: "12px",
+              padding: "14px 16px",
+              marginBottom: "16px",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <span
+                style={{
+                  width: "40px",
+                  height: "40px",
+                  borderRadius: "10px",
+                  background: "#fff3e0",
+                  color: "#e65100",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "20px",
+                }}
+              >
+                <i className="mdi mdi-tag"></i>
+              </span>
+              <div>
+                <div style={{ fontWeight: 700, color: "#263238", fontSize: "14px" }}>
+                  {selectedCatabsen.name || "Tipe absen"}
+                </div>
+                <div style={{ fontSize: "12px", color: "#90a4ae" }}>
+                  {selectedCatabsen.description || "-"}
+                </div>
+              </div>
+            </div>
+            {selectedCatabsen.is_cross_date
+              ? pill("#f3e5f5", "#8e24aa", "Lintas Hari")
+              : pill("#eceff1", "#607d8b", "Same-day")}
+          </div>
+
+          <div style={{ background: "#fff", borderRadius: "12px", padding: "18px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+            {/* Code + Fee */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "14px", marginBottom: "16px" }}>
+              <div style={{ flex: "2 1 200px" }}>
+                <label style={{ fontSize: "12px", fontWeight: 600, color: "#607d8b", marginBottom: "4px", display: "block" }}>
+                  <i className="mdi mdi-barcode" style={{ marginRight: "4px" }}></i>Code Absen
+                </label>
                 <input
                   type="text"
                   className="form-control"
+                  style={{ borderRadius: "10px" }}
                   value={selectedCatabsen.name || ""}
                   onChange={(e) =>
-                    setSelectedCatabsen({
-                      ...selectedCatabsen,
-                      name: e.target.value,
-                    })
+                    setSelectedCatabsen({ ...selectedCatabsen, name: e.target.value })
                   }
                 />
               </div>
-              <div className="form-group">
-                <label>Description</label>
-                <input
-                  className="form-control"
-                  type="text"
-                  value={selectedCatabsen.description || ""}
-                  onChange={(e) =>
-                    setSelectedCatabsen({
-                      ...selectedCatabsen,
-                      description: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              <div className="form-group">
-                <label>Fee</label>
+              <div style={{ flex: "1 1 120px" }}>
+                <label style={{ fontSize: "12px", fontWeight: 600, color: "#607d8b", marginBottom: "4px", display: "block" }}>
+                  <i className="mdi mdi-cash" style={{ marginRight: "4px" }}></i>Fee
+                </label>
                 <input
                   className="form-control"
                   type="number"
+                  style={{ borderRadius: "10px" }}
                   value={selectedCatabsen.fee || ""}
                   onChange={(e) =>
-                    setSelectedCatabsen({
-                      ...selectedCatabsen,
-                      fee: e.target.value,
-                    })
+                    setSelectedCatabsen({ ...selectedCatabsen, fee: e.target.value })
                   }
                 />
               </div>
-              <div className="form-group">
-                <label>Start Time</label>
-                <input
-                  type="time"
-                  className="form-control"
-                  value={selectedCatabsen.start_time}
-                  onChange={(e) =>
-                    setSelectedCatabsen({
-                      ...selectedCatabsen,
-                      start_time: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              <div className="form-group">
-                <label>End Time</label>
-                <input
-                  type="time"
-                  className="form-control"
-                  value={selectedCatabsen.end_time}
-                  onChange={(e) =>
-                    setSelectedCatabsen({
-                      ...selectedCatabsen,
-                      end_time: e.target.value,
-                    })
-                  }
-                />
-              </div>
+            </div>
 
-              <div className="form-group">
-                <label>Kategori Time</label>
+            {/* Description */}
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ fontSize: "12px", fontWeight: 600, color: "#607d8b", marginBottom: "4px", display: "block" }}>
+                <i className="mdi mdi-text" style={{ marginRight: "4px" }}></i>Deskripsi
+              </label>
+              <input
+                className="form-control"
+                type="text"
+                style={{ borderRadius: "10px" }}
+                value={selectedCatabsen.description || ""}
+                onChange={(e) =>
+                  setSelectedCatabsen({ ...selectedCatabsen, description: e.target.value })
+                }
+              />
+            </div>
+
+            {/* Waktu */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "14px", marginBottom: "16px" }}>
+              <div style={{ flex: "1 1 140px" }}>
+                <label style={{ fontSize: "12px", fontWeight: 600, color: "#607d8b", marginBottom: "4px", display: "block" }}>
+                  <i className="mdi mdi-clock-start" style={{ marginRight: "4px" }}></i>Jam Mulai
+                </label>
+                <input
+                  type="time"
+                  className="form-control"
+                  style={{ borderRadius: "10px" }}
+                  value={selectedCatabsen.start_time || ""}
+                  onChange={(e) =>
+                    setSelectedCatabsen({ ...selectedCatabsen, start_time: e.target.value })
+                  }
+                />
+              </div>
+              <div style={{ flex: "1 1 140px" }}>
+                <label style={{ fontSize: "12px", fontWeight: 600, color: "#607d8b", marginBottom: "4px", display: "block" }}>
+                  <i className="mdi mdi-clock-end" style={{ marginRight: "4px" }}></i>Jam Selesai
+                </label>
+                <input
+                  type="time"
+                  className="form-control"
+                  style={{ borderRadius: "10px" }}
+                  value={selectedCatabsen.end_time || ""}
+                  onChange={(e) =>
+                    setSelectedCatabsen({ ...selectedCatabsen, end_time: e.target.value })
+                  }
+                />
+              </div>
+              <div style={{ flex: "1 1 140px" }}>
+                <label style={{ fontSize: "12px", fontWeight: 600, color: "#607d8b", marginBottom: "4px", display: "block" }}>
+                  <i className="mdi mdi-white-balance-sunny" style={{ marginRight: "4px" }}></i>Kategori Waktu
+                </label>
                 <Select
                   options={KatTime}
                   value={selectedKatTime}
                   onChange={(selected) => setSelectedKatTime(selected)}
-                  placeholder="Pilih Kategori Time..."
+                  placeholder="Pilih..."
                   isClearable
+                  menuPosition="fixed"
                 />
               </div>
+            </div>
 
-              <div className="form-group">
-                <div className="form-check">
-                  <input
-                    type="checkbox"
-                    className="form-check-input"
-                    id="edit-is-cross-date"
-                    checked={!!selectedCatabsen.is_cross_date}
-                    onChange={(e) =>
-                      setSelectedCatabsen({
-                        ...selectedCatabsen,
-                        is_cross_date: e.target.checked ? 1 : 0,
-                      })
-                    }
-                  />
-                  <label
-                    className="form-check-label"
-                    htmlFor="edit-is-cross-date"
-                  >
-                    Absen Lintas Hari (keluar besok)?{" "}
-                    <span className="text-secondary text-small">
-                      Centang untuk shift yang masuk hari ini & keluar dini hari
-                      besok (mis. SUBUH, SORE 9 JAM).
-                    </span>
-                  </label>
+            {/* Cross-date toggle */}
+            <div
+              onClick={() =>
+                setSelectedCatabsen({
+                  ...selectedCatabsen,
+                  is_cross_date: selectedCatabsen.is_cross_date ? 0 : 1,
+                })
+              }
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: "10px",
+                border: "1.5px solid",
+                borderColor: selectedCatabsen.is_cross_date ? "#8e24aa" : "#e0e0e0",
+                background: selectedCatabsen.is_cross_date ? "#f3e5f5" : "#fff",
+                borderRadius: "10px",
+                padding: "12px 14px",
+                marginBottom: "16px",
+                cursor: "pointer",
+              }}
+            >
+              <input
+                type="checkbox"
+                className="form-check-input mt-0"
+                style={{ marginTop: "2px" }}
+                checked={!!selectedCatabsen.is_cross_date}
+                onChange={() => {}}
+              />
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "13px", color: selectedCatabsen.is_cross_date ? "#8e24aa" : "#546e7a" }}>
+                  Absen Lintas Hari (keluar besok)
+                </div>
+                <div style={{ fontSize: "11px", color: "#90a4ae" }}>
+                  Untuk shift masuk hari ini & keluar dini hari besok (mis. SUBUH, SORE 9 JAM).
                 </div>
               </div>
+            </div>
 
-              <div className="form-group">
-                <label>
-                  Group Absen (
-                  <span className="text-secondary text-small">
-                    Kosongkan group Absen jika tujuan nya untuk Semua Group
-                  </span>
-                  )
-                </label>
-                <Select
-                  options={groups}
-                  isMulti
-                  value={selectedGroup}
-                  onChange={(selected) => setSelectedGroup(selected)}
-                  placeholder="Pilih Group Absen..."
-                  isClearable
-                />
-              </div>
-              {/*           
-          <div className="form-group">
-                  <label> Group User/ Category</label>
-                  <Select
-                    options={groups} // Data karyawan
-                    value={selectedGroup} // Nilai yang dipilih
-                    onChange={handleGroupChange} // Fungsi ketika berubah
-                    placeholder="Pilih group Category..."
-                    isClearable // Tambahkan tombol untuk menghapus pilihan
-                  />
-                </div> */}
+            {/* Grup */}
+            <div>
+              <label style={{ fontSize: "12px", fontWeight: 600, color: "#607d8b", marginBottom: "4px", display: "block" }}>
+                <i className="mdi mdi-account-group" style={{ marginRight: "4px" }}></i>Grup Absen
+              </label>
+              <Select
+                options={groups}
+                isMulti
+                value={selectedGroup}
+                onChange={(selected) => setSelectedGroup(selected)}
+                placeholder="Pilih Grup Absen..."
+                isClearable
+                menuPosition="fixed"
+              />
+              <small style={{ color: "#b0bec5", fontSize: "11px" }}>
+                Kosongkan untuk berlaku ke <b>Semua Grup</b>.
+              </small>
             </div>
           </div>
         </Modal.Body>
-        <Modal.Footer>
-          <Button
-            className="btn btn-light"
-            onClick={() => setModalVisible(false)}
-          >
-            Close
+        <Modal.Footer style={{ borderTop: "1px solid #eceff1" }}>
+          <Button className="btn btn-light" onClick={() => setModalVisible(false)}>
+            Batal
           </Button>
           <Button
-            className="btn btn-gradient-primary me-2"
             onClick={handleSaveUpdate}
+            style={{ background: "#2471a3", border: "none", fontWeight: 600 }}
           >
+            <i className="mdi mdi-content-save" style={{ marginRight: "5px" }}></i>
             Simpan Perubahan
           </Button>
         </Modal.Footer>
