@@ -239,6 +239,7 @@ const Absensi = () => {
   const [savingKoreksi, setSavingKoreksi] = useState(false);
   const [tipeAbsenOptions, setTipeAbsenOptions] = useState([]);
   const [loadingTipe, setLoadingTipe] = useState(false);
+  const [detailRow, setDetailRow] = useState(null); // baris untuk modal detail lokasi
   // UI baru (toggle dalam halaman). Default "baru", persist ke localStorage.
   const [uiMode, setUiMode] = useState(
     () => localStorage.getItem("absensi_ui_mode") || "baru"
@@ -605,6 +606,38 @@ const Absensi = () => {
     }
   };
 
+  // Jarak Haversine (meter) antara lokasi absen & lokasi OC seharusnya.
+  const hitungJarak = (lat1, lon1, lat2, lon2) => {
+    const R = 6371000;
+    const toRad = (d) => (d * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+
+  // Info lokasi baris: koordinat absen, koordinat OC, jarak, status radius.
+  const getLokasiInfo = (row) => {
+    const aLat = Number(row?.latitude);
+    const aLon = Number(row?.longitude);
+    const rLat = Number(row?.retail_latitude);
+    const rLon = Number(row?.retail_longitude);
+    const radius = Number(row?.retail_radius);
+    const hasAbsen =
+      Number.isFinite(aLat) && Number.isFinite(aLon) && !(aLat === 0 && aLon === 0);
+    const hasRetail = Number.isFinite(rLat) && Number.isFinite(rLon);
+    let jarak = null;
+    if (hasAbsen && hasRetail) jarak = hitungJarak(aLat, aLon, rLat, rLon);
+    const dalamRadius =
+      jarak != null && Number.isFinite(radius) ? jarak <= radius : null;
+    return { aLat, aLon, rLat, rLon, radius, hasAbsen, hasRetail, jarak, dalamRadius };
+  };
+
+  const fmtJarak = (m) =>
+    m == null ? "-" : m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`;
+
   // Badge status berwarna (pill) untuk UI baru.
   const pill = (bg, text, label) => (
     <span
@@ -781,6 +814,7 @@ const Absensi = () => {
       name: "Aksi",
       cell: (row) => (
         <div style={{ display: "flex", alignItems: "center" }}>
+          {iconBtn("#5c6bc0", "Detail lokasi absen", () => setDetailRow(row), "mdi-map-marker-radius")}
           {iconBtn(
             row.is_valid ? "#43a047" : "#e53935",
             row.is_valid ? "Set Invalid" : "Validasi",
@@ -794,7 +828,7 @@ const Absensi = () => {
         </div>
       ),
       grow: 1.6,
-      width: "175px",
+      width: "210px",
     },
   ];
 
@@ -1070,6 +1104,20 @@ const Absensi = () => {
         </button>
       ),
     },
+    {
+      name: (
+        <span style={{ marginBottom: "45px" }}>Detail</span>
+      ),
+      cell: (row) => (
+        <button
+          className="btn btn-sm btn-gradient-primary"
+          onClick={() => setDetailRow(row)}
+          title="Detail lokasi & jarak absen"
+        >
+          Detail
+        </button>
+      ),
+    },
   ];
 
   useEffect(() => {
@@ -1331,6 +1379,126 @@ const Absensi = () => {
           )}
         </div>
       )}
+
+      {detailRow && (() => {
+        const loc = getLokasiInfo(detailRow);
+        const mapAbsen = loc.hasAbsen
+          ? `https://www.google.com/maps?q=${loc.aLat},${loc.aLon}`
+          : null;
+        const mapRetail = loc.hasRetail
+          ? `https://www.google.com/maps?q=${loc.rLat},${loc.rLon}`
+          : null;
+        const infoRow = (label, value) => (
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", padding: "7px 0", borderBottom: "1px solid #f0f2f5" }}>
+            <span style={{ fontSize: "12px", color: "#90a4ae" }}>{label}</span>
+            <span style={{ fontSize: "13px", color: "#37474f", fontWeight: 600, textAlign: "right" }}>{value}</span>
+          </div>
+        );
+        return (
+          <div
+            style={{
+              position: "fixed", top: 0, left: 0, width: "100%", height: "100%",
+              backgroundColor: "rgba(0,0,0,0.6)", display: "flex",
+              justifyContent: "center", alignItems: "center", zIndex: 1000,
+            }}
+            onClick={() => setDetailRow(null)}
+          >
+            <div
+              style={{
+                background: "#fff", borderRadius: "14px", padding: "20px",
+                width: "460px", maxWidth: "94%", maxHeight: "90vh", overflowY: "auto",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+                <h5 style={{ margin: 0, fontWeight: 700, color: "#263238" }}>
+                  <i className="mdi mdi-map-marker-radius" style={{ color: "#5c6bc0", marginRight: "6px" }}></i>
+                  Detail Absen
+                </h5>
+                <button
+                  onClick={() => setDetailRow(null)}
+                  style={{ border: "none", background: "transparent", fontSize: "22px", color: "#b0bec5", cursor: "pointer", lineHeight: 1 }}
+                >
+                  &times;
+                </button>
+              </div>
+
+              {/* Info absen */}
+              <div style={{ marginBottom: "16px" }}>
+                {infoRow("Karyawan", detailRow.nama_karyawan || "-")}
+                {infoRow("Retail/Outlet", detailRow.retail_name || "-")}
+                {infoRow("Code", detailRow.category_absen || "-")}
+                {infoRow("Deskripsi", detailRow.description || "-")}
+                {infoRow(
+                  "Waktu",
+                  detailRow.absen_time ? format(new Date(detailRow.absen_time), "dd MMM yyyy, HH:mm:ss") : "-"
+                )}
+                {infoRow("Catatan", detailRow.reason || "-")}
+              </div>
+
+              {/* Kartu jarak */}
+              <div
+                style={{
+                  background: loc.dalamRadius === false ? "#ffebee" : loc.dalamRadius === true ? "#e8f5e9" : "#f5f7fa",
+                  borderRadius: "12px", padding: "14px", marginBottom: "14px", textAlign: "center",
+                }}
+              >
+                <div style={{ fontSize: "11px", color: "#607d8b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                  Jarak dari lokasi OC
+                </div>
+                <div style={{ fontSize: "28px", fontWeight: 800, color: loc.dalamRadius === false ? "#c62828" : "#2e7d32", lineHeight: 1.3 }}>
+                  {loc.jarak != null ? fmtJarak(loc.jarak) : "N/A"}
+                </div>
+                <div style={{ fontSize: "12px", color: "#607d8b" }}>
+                  {Number.isFinite(loc.radius) ? `Radius OC: ${fmtJarak(loc.radius)}` : "Radius OC tak diset"}
+                  {loc.dalamRadius === true && " — di dalam radius"}
+                  {loc.dalamRadius === false && " — di LUAR radius"}
+                </div>
+              </div>
+
+              {/* Koordinat */}
+              <div style={{ marginBottom: "14px" }}>
+                {infoRow(
+                  "Lokasi absen",
+                  loc.hasAbsen ? `${loc.aLat.toFixed(5)}, ${loc.aLon.toFixed(5)}` : "Tidak tercatat"
+                )}
+                {infoRow(
+                  "Lokasi OC",
+                  loc.hasRetail ? `${loc.rLat.toFixed(5)}, ${loc.rLon.toFixed(5)}` : "Tidak diset"
+                )}
+              </div>
+
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                {mapAbsen && (
+                  <a
+                    href={mapAbsen} target="_blank" rel="noopener noreferrer"
+                    className="btn" style={{ flex: 1, background: "#5c6bc0", color: "#fff", borderRadius: "10px", fontWeight: 600, minWidth: "140px" }}
+                  >
+                    <i className="mdi mdi-map-marker"></i> Peta Lokasi Absen
+                  </a>
+                )}
+                {loc.hasAbsen && loc.hasRetail && (
+                  <a
+                    href={`https://www.google.com/maps/dir/${loc.aLat},${loc.aLon}/${loc.rLat},${loc.rLon}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="btn" style={{ flex: 1, background: "#26a69a", color: "#fff", borderRadius: "10px", fontWeight: 600, minWidth: "140px" }}
+                  >
+                    <i className="mdi mdi-directions"></i> Rute ke OC
+                  </a>
+                )}
+                {!mapAbsen && mapRetail && (
+                  <a
+                    href={mapRetail} target="_blank" rel="noopener noreferrer"
+                    className="btn" style={{ flex: 1, background: "#26a69a", color: "#fff", borderRadius: "10px", fontWeight: 600 }}
+                  >
+                    <i className="mdi mdi-store"></i> Peta Lokasi OC
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {koreksiModalVisible && selectedKoreksi && (
         <div

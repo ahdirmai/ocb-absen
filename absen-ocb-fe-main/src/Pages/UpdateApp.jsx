@@ -142,11 +142,11 @@ const lemburSteps = [
   },
   {
     title: "Absen masuk lembur",
-    body: "Pilih tipe absen masuk dari shift yang Anda gantikan, ambil foto, lalu kirim. Absen lembur selalu menunggu approval atasan.",
+    body: "Pilih tipe absen masuk dari shift yang Anda gantikan, ambil foto, lalu kirim. Absen lembur selalu menunggu approval atasan. Anda harus berada di dalam radius OC yang dipilih — absen di luar radius OC tersebut ditolak, sama seperti absen biasa.",
   },
   {
     title: "Absen keluar lembur",
-    body: "Saat lembur selesai, buka aplikasi lagi. Mode lembur menyala otomatis dan tipe KELUAR pasangannya langsung muncul — tak perlu tekan Mulai Lembur lagi. OC sudah terkunci ke tempat Anda masuk tadi. Lembur juga hanya dihitung bila masuk dan keluar keduanya tercatat.",
+    body: "Saat lembur selesai, buka aplikasi lagi. Mode lembur menyala otomatis dan tipe KELUAR pasangannya langsung muncul — tak perlu tekan Mulai Lembur lagi. OC sudah terkunci ke tempat Anda masuk tadi, dan absen keluar pun harus di dalam radius OC itu. Lembur hanya dihitung bila masuk dan keluar keduanya tercatat.",
   },
 ];
 

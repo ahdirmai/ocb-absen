@@ -349,8 +349,8 @@ const historyAbsensiAllUser = async (start_date, end_date) => {
         a.user_id, 
         u.name AS nama_karyawan, 
         a.absen_time, 
-        a.retail_id, 
-        r.name AS retail_name, 
+        a.retail_id,
+        r.name AS retail_name,
         a.absen_type_id,
         ta.name AS category_absen,
         ta.description,
@@ -363,8 +363,13 @@ const historyAbsensiAllUser = async (start_date, end_date) => {
         a.reason,
         a.photo_url,
         a.status_approval,
-        a.is_lembur
-      FROM absensi a 
+        a.is_lembur,
+        a.latitude,
+        a.longitude,
+        r.latitude AS retail_latitude,
+        r.longitude AS retail_longitude,
+        r.radius AS retail_radius
+      FROM absensi a
       JOIN user u ON u.user_id = a.user_id  
       JOIN retail r ON r.retail_id = a.retail_id 
       JOIN tipe_absen ta ON ta.absen_id = a.absen_type_id 
