@@ -722,6 +722,31 @@ const Absensi = () => {
       width: "80px",
     },
     {
+      name: "Catatan",
+      sortable: true,
+      selector: (row) => row.reason || "",
+      cell: (row) => {
+        const text = String(row.reason || "");
+        if (!text) return <span style={{ fontSize: "12px", color: "#b0bec5" }}>-</span>;
+        return (
+          <span
+            style={{
+              fontSize: "12px",
+              color: "#455a64",
+              whiteSpace: "pre-line",
+              lineHeight: 1.4,
+              display: "block",
+              padding: "4px 0",
+            }}
+          >
+            {text}
+          </span>
+        );
+      },
+      wrap: true,
+      grow: 2.4,
+    },
+    {
       name: "Foto",
       cell: (row) => {
         const isVid =

@@ -468,10 +468,13 @@ const getTodayAttendanceDirectionSummary = async (user_id) => {
 
 // Ringkasan arah absen hari ini difilter is_lembur.
 // isLembur=false => regular (is_lembur NULL/0), isLembur=true => lembur (is_lembur=1).
-const getTodayDirectionSummaryByLembur = async (user_id, isLembur) => {
+const getTodayDirectionSummaryByLembur = async (user_id, isLembur, includeYesterday = false) => {
     const lemburFilter = isLembur
         ? "a.is_lembur = 1"
         : "(a.is_lembur IS NULL OR a.is_lembur = 0)";
+    const dateFilter = includeYesterday
+        ? "DATE(a.absen_time) >= (CURDATE() - INTERVAL 1 DAY)"
+        : "DATE(a.absen_time) = CURDATE()";
 
     const [results] = await dbpool.query(
         `SELECT
@@ -480,7 +483,7 @@ const getTodayDirectionSummaryByLembur = async (user_id, isLembur) => {
          FROM absensi a
          JOIN tipe_absen ta ON ta.absen_id = a.absen_type_id
          WHERE a.user_id = ?
-           AND DATE(a.absen_time) = CURDATE()
+           AND ${dateFilter}
            AND (a.status_approval IS NULL OR a.status_approval <> 3)
            AND ${lemburFilter}`,
         [user_id]

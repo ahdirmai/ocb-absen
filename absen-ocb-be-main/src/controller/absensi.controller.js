@@ -102,6 +102,11 @@ const createAbsensi = async (req, res) => {
       selectedDesc.includes("keluar") || selectedDesc.includes("pulang");
     const isMasuk = selectedDesc.includes("masuk");
 
+    // Keluar dini hari (< 12:00) = shift/lembur cross-midnight (SORE 9 JAM,
+    // SUBUH). Masuk-nya tercatat kemarin, jadi cek masuk hari ini ATAU kemarin.
+    const isEarlyMorningKeluar =
+      timeAbsenMoment.format("HH:mm:ss") < "12:00:00";
+
     // Hard-guard lembur. Dua jalur precondition:
     // - Jadwal-harian: user gantikan karyawan toko lain di shift beda (komplemen).
     //   Boleh lembur sebelum/sesudah shift regular hari itu — TAPI tidak saat
@@ -157,16 +162,20 @@ const createAbsensi = async (req, res) => {
       }
 
       if (isKeluar) {
+        // Lembur subuh cross-date: masuk lembur tercatat kemarin malam.
+        // includeYesterday saat keluar dini hari agar masuk kemarin terdeteksi.
         const lemburSesi = await sesiModel.getTodaySesiSummary(
           body.user_id,
-          true
+          true,
+          isEarlyMorningKeluar
         );
         // Lembur masuk ada = sesi lembur open/closed, ATAU (fallback) count masuk lembur.
         let lemburMasukExists = lemburSesi.hasOpen || lemburSesi.hasClosed;
         if (!lemburMasukExists) {
           const lemburToday = await absensiModel.getTodayDirectionSummaryByLembur(
             body.user_id,
-            true
+            true,
+            isEarlyMorningKeluar
           );
           lemburMasukExists = lemburToday.masuk >= 1;
         }
@@ -182,11 +191,6 @@ const createAbsensi = async (req, res) => {
         }
       }
     }
-    // Keluar dini hari (< 12:00) = shift cross-midnight (SORE 9 JAM, SUBUH),
-    // masuk-nya tercatat kemarin. Cek masuk hari ini ATAU kemarin.
-    const isEarlyMorningKeluar =
-      timeAbsenMoment.format("HH:mm:ss") < "12:00:00";
-
     const SHIFT_SCHEDULED_CATEGORIES = [18, 21];
     const isSalesToko = SHIFT_SCHEDULED_CATEGORIES.includes(
       Number(getUpline?.category_user)
