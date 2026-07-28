@@ -37,8 +37,9 @@ VITE_API_IMAGE=http://localhost:4000        # base URL file gambar/video (foto a
 - **Shifting** (`/shifting`) — assign shift ke karyawan per retail. Toggle UI Lama/Baru.
 - **Jadwal Harian** (`/jadwal-harian`) — matrix jadwal Sales Toko/Trainee (desktop) / list per-hari (mobile), import Excel.
 - **Tipe Absen** (`/typeabsen`) — kelola tipe absen; pasangan masuk+keluar tampil 1 baris. Toggle UI Lama/Baru.
-- Users, Retail, Off Day, Potongan, Bonus, Laporan, Salary/KPI, Dashboard.
+- **Retail** (`/retails`) — kelola OC/Store: nama, koordinat, radius, status. Tombol buka lokasi di Google Maps. Toggle UI Lama/Baru.
+- Users, Off Day, Potongan, Bonus, Laporan, Salary/KPI, Dashboard.
 
 ## Catatan UI
 
-Beberapa halaman (Absensi, Users, Shifting, Tipe Absen) punya toggle **UI Lama / UI Baru** di header. Pilihan tersimpan di `localStorage` (`*_ui_mode`), default **Baru**. UI Lama tetap tersedia sebagai fallback.
+Beberapa halaman (Absensi, Users, Shifting, Tipe Absen, Retail) punya toggle **UI Lama / UI Baru** di header. Pilihan tersimpan di `localStorage` (`*_ui_mode`), default **Baru**. UI Lama tetap tersedia sebagai fallback.

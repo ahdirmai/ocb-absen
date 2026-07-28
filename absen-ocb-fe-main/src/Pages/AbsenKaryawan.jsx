@@ -1242,6 +1242,18 @@ const AbsenKaryawan = () => {
       return;
     }
 
+    // Blok submit bila di luar radius OC. BE sudah tolak (checkAbsensi), cegah
+    // di FE supaya user tak upload foto sia-sia + pesan jelas. Hanya blok bila
+    // locationStatus terhitung (retail punya koordinat+radius).
+    if (locationStatus && !locationStatus.dalamRadius) {
+      Swal.fire(
+        "Di luar radius lokasi",
+        `Anda berada ${locationStatus.jarak}m dari ${locationStatus.retail_name} (maksimal ${locationStatus.radius}m). Absen hanya bisa dilakukan di dalam radius OC/Store. Silakan mendekat ke lokasi.`,
+        "error"
+      );
+      return;
+    }
+
     const authData = getAuthData();
 
     if (!authData) {
@@ -1285,12 +1297,9 @@ const AbsenKaryawan = () => {
       formData.append("absen_type_id", selectedAbsenType);
       formData.append("latitude", String(location.latitude));
       formData.append("longitude", String(location.longitude));
-      const isOutsideRadius = locationStatus ? !locationStatus.dalamRadius : false;
+      // Luar radius sudah diblok di atas (tak sampai sini). is_approval hanya
+      // dari jalur lembur.
       const reasonParts = [];
-
-      if (isOutsideRadius) {
-        reasonParts.push("Absen di luar radius");
-      }
 
       if (isOvertimeAttempt) {
         reasonParts.push(`Lembur - sudah ada ${currentAttemptLabel} hari ini`);
@@ -1302,7 +1311,7 @@ const AbsenKaryawan = () => {
       }
 
       formData.append("reason", reasonParts.join("; "));
-      formData.append("is_approval", isOutsideRadius || isOvertimeAttempt ? 1 : 0);
+      formData.append("is_approval", isOvertimeAttempt ? 1 : 0);
       if (effectiveLemburMode) {
         formData.append("is_lembur", "1");
       }
@@ -1363,12 +1372,16 @@ const AbsenKaryawan = () => {
     resetSession();
   };
 
+  // Luar radius OC = tak boleh submit (selaras guard BE). Hanya blok bila
+  // locationStatus terhitung (retail punya koordinat+radius).
+  const outsideRadius = Boolean(locationStatus) && !locationStatus.dalamRadius;
   const canSubmit =
     Boolean(photo) &&
     hasLocation &&
     Boolean(selectedAbsenType) &&
     (!effectiveLemburMode || Boolean(selectedLemburRetail)) &&
     !todayHasPending &&
+    !outsideRadius &&
     !loading &&
     !loginLoading;
 
@@ -1847,10 +1860,10 @@ const AbsenKaryawan = () => {
           </p>
         )}
         {locationStatus && (
-          <p style={{ margin: "5px 0", color: locationStatus.dalamRadius ? "green" : "#f39c12", fontWeight: "bold" }}>
+          <p style={{ margin: "5px 0", color: locationStatus.dalamRadius ? "green" : "#e74c3c", fontWeight: "bold" }}>
             {locationStatus.dalamRadius
               ? `Dalam radius ${locationStatus.retail_name} (${locationStatus.jarak}m / maks ${locationStatus.radius}m)`
-              : `Di luar radius ${locationStatus.retail_name} (${locationStatus.jarak}m / maks ${locationStatus.radius}m) — absen akan menunggu approval atasan`}
+              : `Di luar radius ${locationStatus.retail_name} (${locationStatus.jarak}m / maks ${locationStatus.radius}m) — tidak bisa absen, mendekatlah ke lokasi`}
           </p>
         )}
         <p style={{ margin: "5px 0", color: photo ? "green" : "red" }}>
@@ -2084,7 +2097,9 @@ const AbsenKaryawan = () => {
         >
           {todayHasPending
             ? "Ada absen yang masih menunggu approval. Tidak bisa absen lagi sampai di-approve atau di-reject."
-            : "Lengkapi semua checklist di atas untuk submit absen."}
+            : outsideRadius
+              ? `Anda di luar radius ${locationStatus.retail_name} (${locationStatus.jarak}m / maks ${locationStatus.radius}m). Mendekatlah ke lokasi OC untuk bisa absen.`
+              : "Lengkapi semua checklist di atas untuk submit absen."}
         </p>
       )}
 
