@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- **Luar radius OC = tolak submit absen** (`validasiAbsensi.js`, `UpdateApp.jsx`) — sebelumnya absen di luar radius `retail_id` yang dipilih tetap lolos bila dekat OC lain (`findNearbyRetail`), dengan `is_approval=1` (menunggu approval atasan). Sekarang **langsung ditolak HTTP 400** — tak ada fallback OC terdekat, tak ada jalur approval-luar-radius. Berlaku semua absen (masuk/keluar, regular/lembur). Rasional: untuk lembur `retail_id` sudah OC tempat lembur (karyawan pilih sendiri di app), jadi radius dicek terhadap OC itu; absen harus benar di lokasi OC. `findNearbyRetail` dibuang (unused). GPS mati/invalid tetap 400. Retail tanpa data lat/long/radius (blank) tetap dilewati tanpa cek. Note radius di `/update` disesuaikan. Enforcement BE.
+
 ### Fixed
 - **Absen keluar lembur subuh (cross-date) salah ditolak** (`absensi.controller.js`, `absensi.model.js`) — guard lembur-keluar cek masuk lembur `today-only` (`getTodaySesiSummary`/`getTodayDirectionSummaryByLembur` filter `tanggal=CURDATE()`), padahal lembur subuh cross-midnight masuk-nya tercatat kemarin malam. Akibat: user sudah absen masuk lembur tapi absen keluar ditolak `"Tidak bisa absen keluar lembur sebelum absen masuk lembur."`. Fix: pindahkan `isEarlyMorningKeluar` ke atas (sebelum blok guard) + teruskan sebagai `includeYesterday` ke kedua cek — selaras dengan pairing sesi `findOpenSesi` yang sudah cross-date aware. `getTodayDirectionSummaryByLembur` +param `includeYesterday` (dateFilter `>= CURDATE()-1 DAY`). Guard tetap ketat untuk keluar siang (today-only), longgar ke kemarin hanya saat keluar < 12:00.
 

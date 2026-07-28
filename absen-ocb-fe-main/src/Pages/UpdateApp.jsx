@@ -112,7 +112,7 @@ const absenPoints = [
   {
     icon: "mdi-map-marker-radius",
     title: "Harus di dalam radius toko",
-    body: "Absen di luar radius tetap bisa dikirim, tapi statusnya jadi menunggu approval atasan. Bila terlalu jauh dan tak dekat OC mana pun, absen ditolak.",
+    body: "Absen hanya bisa dilakukan di dalam radius OC/Store yang dipilih. Di luar radius, absen ditolak — termasuk saat lembur, karena OC tempat lembur sudah Anda pilih sendiri. Pastikan GPS aktif dan Anda benar-benar berada di lokasi.",
   },
   {
     icon: "mdi-weather-night",
