@@ -120,6 +120,11 @@ const absenPoints = [
     body: "Shift yang masuk malam dan keluar besok pagi (mis. SUBUH) tetap dikenali. Tipe KELUAR-nya muncul keesokan harinya sampai lewat batas jam keluar.",
   },
   {
+    icon: "mdi-clock-alert-outline",
+    title: "Batas waktu absen keluar",
+    body: "Shift biasa: absen keluar paling lambat di hari yang sama dengan absen masuk (sebelum tengah malam). Shift lintas hari (mis. SUBUH, SORE 9 JAM): paling lambat 3 jam setelah jam pulang terjadwal — contoh jam pulang 01.00, absen keluar masih diterima sampai 04.00. Lewat batas, absen masuk dianggap belum lengkap (lupa keluar) dan tidak dihitung hadir.",
+  },
+  {
     icon: "mdi-calendar-edit",
     title: "Tukar shift diajukan H-1",
     body: "Perubahan jadwal yang sudah ditetapkan harus diajukan ke admin paling lambat H-1 (sehari sebelumnya). Pengajuan di hari-H tidak dilayani — jadwal yang berlaku tetap yang tercatat di sistem.",
