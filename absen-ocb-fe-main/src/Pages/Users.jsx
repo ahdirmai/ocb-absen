@@ -176,6 +176,8 @@ const UsersBaru = ({
             highlightOnHover
             fixedHeader
             fixedHeaderScrollHeight="62vh"
+            defaultSortFieldId={1}
+            defaultSortAsc
             customStyles={{
               headCells: {
                 style: {
@@ -1051,9 +1053,12 @@ const Users = () => {
   // Kolom UI baru: tanpa input filter di header (search global di toolbar).
   const columnsV2 = [
     {
+      id: 1,
       name: "Karyawan",
       minWidth: "240px",
       wrap: true,
+      sortable: true,
+      selector: (row) => String(row.name || "").toLowerCase(),
       cell: (row) => (
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <img
