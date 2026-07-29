@@ -92,6 +92,35 @@ const createMenuConfig = async(req, res) =>{
     }
 }
 
+// Batch: tambah beberapa menu ke 1 kategori sekaligus. Body: { id_category,
+// menu_ids: [...], created_by, created_at }.
+const createMenuConfigBulk = async(req, res) =>{
+    const {body} = req;
+    try {
+        if (!body.id_category || !Array.isArray(body.menu_ids) || body.menu_ids.length === 0) {
+            return res.status(400).json({
+                message: 'Kategori dan minimal 1 menu wajib dipilih.',
+                status: 'failed',
+                status_code: '400',
+            });
+        }
+        const result = await menuModel.createMenuConfigBulk(body);
+        res.json({
+            message: `${result.inserted} menu ditambahkan${result.skipped ? `, ${result.skipped} dilewati (sudah ada)` : ''}.`,
+            status: 'success',
+            status_code: '200',
+            data: result,
+        });
+    } catch (error) {
+        res.status(500).json({
+            message: "Internal Server Error",
+            status: 'failed',
+            status_code: '500',
+            serverMessage: error,
+        });
+    }
+}
+
 const updateMenuConfig = async(req, res)=>{
     const {idMenuConfig} = req.params;
     const {body} = req;
@@ -150,6 +179,7 @@ module.exports={
     getAllMenuCategory,
     getAllMenu,
     createMenuConfig,
+    createMenuConfigBulk,
     updateMenuConfig,
     deleteMenuConfig
 

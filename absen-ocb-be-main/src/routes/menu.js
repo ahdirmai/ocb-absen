@@ -9,6 +9,7 @@ router.get('/category/:idCategory', authenticateToken, menuController.getMenuCat
 router.get('/category', authenticateToken, menuController.getAllMenuCategory);
 router.get('/', authenticateToken, menuController.getAllMenu);
 router.post('/add-config', authenticateToken, menuController.createMenuConfig);
+router.post('/add-config-bulk', authenticateToken, menuController.createMenuConfigBulk);
 router.post('/update-config/:idMenuConfig', authenticateToken, menuController.updateMenuConfig );
 router.post('/delete-config/:idMenuConfig', authenticateToken, menuController.deleteMenuConfig );
 

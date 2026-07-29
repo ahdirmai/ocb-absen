@@ -53,6 +53,46 @@ const createMenuConfig = async(body)=>{
 
 }
 
+// Batch insert beberapa menu ke 1 kategori sekaligus (multi-select FE).
+// Lewati menu yang sudah ter-assign (aktif) ke kategori itu — cegah duplikat.
+const createMenuConfigBulk = async(body)=>{
+    const menuIds = Array.isArray(body.menu_ids) ? body.menu_ids : [];
+    const categoryId = body.id_category;
+    if (!categoryId || menuIds.length === 0) {
+        return { inserted: 0, skipped: 0 };
+    }
+
+    const [existing] = await dbpool.query(
+        'SELECT menu_id FROM navigation_access WHERE category_id = ? AND is_deleted = 0',
+        [categoryId]
+    );
+    const existingSet = new Set(existing.map((r) => Number(r.menu_id)));
+
+    const toInsert = menuIds
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id) && !existingSet.has(id));
+
+    if (toInsert.length === 0) {
+        return { inserted: 0, skipped: menuIds.length };
+    }
+
+    const values = toInsert.map((menuId) => [
+        categoryId,
+        menuId,
+        body.created_at,
+        body.created_by,
+    ]);
+    const [result] = await dbpool.query(
+        'INSERT INTO navigation_access (category_id, menu_id, created_at, created_by) VALUES ?',
+        [values]
+    );
+    return {
+        inserted: result.affectedRows || toInsert.length,
+        skipped: menuIds.length - toInsert.length,
+        firstInsertId: result.insertId,
+    };
+}
+
 const updateMenuConfig = (body, idMenuConfig) =>{
     const SQLQuery = `UPDATE navigation_access 
                         SET category_id ='${body.id_category}',menu_id = '${body.menu_id}', updated_at ='${body.updated_at}',updated_by = '${body.updated_by}' 
@@ -76,6 +116,7 @@ module.exports ={
     getAllMenucategory,
     getAllMenu,
     createMenuConfig,
+    createMenuConfigBulk,
     updateMenuConfig,
     deleteMenuConfig
 }

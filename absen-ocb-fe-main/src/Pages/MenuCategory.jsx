@@ -282,6 +282,9 @@ const MenuCategory = () => {
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [menus, setmenus] = useState([]);
   const [selectedmenus, setSelectedmenus] = useState(null);
+  // Multi-select menu untuk modal Tambah (tambah banyak menu sekaligus).
+  const [addMenuIds, setAddMenuIds] = useState([]);
+  const [savingBulk, setSavingBulk] = useState(false);
 
   const [filterText, setFilterText] = useState({
     category_user: "",
@@ -450,55 +453,60 @@ const MenuCategory = () => {
     return list.sort((a, b) => a.key.localeCompare(b.key));
   }, [displayedRows]);
 
-  const handleAddMenuCategory = async () => {
+  // Opsi menu untuk modal Tambah: buang menu yang SUDAH ter-assign ke kategori
+  // terpilih (cegah duplikat, sinkron guard BE bulk).
+  const addMenuOptions = useMemo(() => {
+    const catId = newMenuCategory.id_category;
+    if (!catId) return menus;
+    const assigned = new Set(
+      MenuCategory.filter((r) => r.id_category === catId).map((r) => r.menu_id)
+    );
+    return menus.filter((m) => !assigned.has(m.value));
+  }, [menus, MenuCategory, newMenuCategory.id_category]);
+
+  // Tambah BANYAK menu ke 1 kategori sekaligus (multi-select). Batch ke BE,
+  // lalu refetch supaya baris baru (dengan parent_name) sinkron.
+  const handleAddBulk = async () => {
+    if (!newMenuCategory.id_category) {
+      Swal.fire("Validasi", "Kategori user wajib dipilih.", "warning");
+      return;
+    }
+    if (addMenuIds.length === 0) {
+      Swal.fire("Validasi", "Pilih minimal 1 menu.", "warning");
+      return;
+    }
+    setSavingBulk(true);
     try {
       const token = localStorage.getItem("token");
       const headers = { Authorization: `Bearer ${token}` };
       const userProfile = sessionStorage.getItem("userProfile");
-      const userData = JSON.parse(userProfile); // Parse JSON
+      const userData = JSON.parse(userProfile);
       const userId = userData[0]?.user_id;
 
-      //   const userData = JSON.parse(sessionStorage.getItem("userData"));
-      //   const userId = userData?.id;
-
-      const response = await axios.post(
-        `${VITE_API_URL}/menu/add-config`,
+      const res = await axios.post(
+        `${VITE_API_URL}/menu/add-config-bulk`,
         {
-          ...newMenuCategory,
+          id_category: newMenuCategory.id_category,
+          menu_ids: addMenuIds.map((m) => m.value),
           created_by: userId,
           created_at: DateNow,
         },
         { headers }
       );
-      // Ambil data baru dari respons API
-      const addedMenuCategory = response.data.data;
 
-      // Tambahkan data baru ke state dengan format yang sesuai tabel
-      setMenuCategory((prev) => [
-        
-        
-        {
-          ...addedMenuCategory,
-          // name: users.find((u) => u.value === addedAbsen.user_id)?.label || "", // Nama user
-          category_user:
-            groups.find((r) => r.value === addedMenuCategory.id_category)?.label || "", // Nama retail
-          menu_name: menus.find((r) => r.value === addedMenuCategory.menu_id)?.label || "",
-          
-        },
-        ...prev,
-      ]);
+      // Refetch config supaya baris baru + parent_name akurat.
+      const refetch = await axios.get(`${VITE_API_URL}/menu/category`, { headers });
+      setMenuCategory(refetch.data.data || []);
 
-      // setMenuCategory((prev) => [...prev, response.data.data]);
-      Swal.fire("Success!", `${response.data.message}`, "success");
+      Swal.fire("Berhasil!", res.data.message || "Menu ditambahkan.", "success");
       setAddModalVisible(false);
-      setnewMenuCategory({ id_category: "", id: "" });
-      setSelectedmenus(null);
+      setnewMenuCategory({ id_category: "", menu_id: "" });
+      setSelectedGroup(null);
+      setAddMenuIds([]);
     } catch (error) {
-      Swal.fire(
-        "Error!",
-        error.response?.data?.message || error.message,
-        "error"
-      );
+      Swal.fire("Error!", error.response?.data?.message || error.message, "error");
+    } finally {
+      setSavingBulk(false);
     }
   };
 
@@ -512,7 +520,7 @@ const MenuCategory = () => {
     setnewMenuCategory({ id_category: grp.id_category ?? "", menu_id: "" });
     const g = groups.find((x) => x.value === grp.id_category);
     setSelectedGroup(g || null);
-    setSelectedmenus(null);
+    setAddMenuIds([]);
     setAddModalVisible(true);
   };
 
@@ -766,7 +774,7 @@ const MenuCategory = () => {
           onAdd={() => {
             setnewMenuCategory({ id_category: "", menu_id: "" });
             setSelectedGroup(null);
-            setSelectedmenus(null);
+            setAddMenuIds([]);
             setAddModalVisible(true);
           }}
           onAddForCategory={handleAddForCategory}
@@ -887,39 +895,48 @@ const MenuCategory = () => {
               />
             </div>
             <div>
-              <label style={{ fontSize: "12px", fontWeight: 600, color: "#607d8b", marginBottom: "4px", display: "block" }}>
-                <i className="mdi mdi-menu" style={{ marginRight: "4px" }}></i>Menu
+              <label style={{ fontSize: "12px", fontWeight: 600, color: "#607d8b", marginBottom: "4px", display: "flex", justifyContent: "space-between" }}>
+                <span><i className="mdi mdi-menu" style={{ marginRight: "4px" }}></i>Menu</span>
+                {addMenuIds.length > 0 && (
+                  <span style={{ color: "#2471a3" }}>{addMenuIds.length} dipilih</span>
+                )}
               </label>
               <Select
-                options={menus}
-                value={
-                  newMenuCategory.menu_id
-                    ? {
-                        value: newMenuCategory.menu_id,
-                        label: menus.find((r) => r.value === newMenuCategory.menu_id)?.label,
-                      }
-                    : null
-                }
-                onChange={(option) => {
-                  setSelectedmenus(option);
-                  setnewMenuCategory({ ...newMenuCategory, menu_id: option ? option.value : "" });
-                }}
-                placeholder="Pilih Menu..."
+                options={addMenuOptions}
+                value={addMenuIds}
+                onChange={(opts) => setAddMenuIds(opts || [])}
+                placeholder="Pilih satu atau beberapa menu..."
+                isMulti
+                closeMenuOnSelect={false}
                 isClearable
                 menuPosition="fixed"
+                noOptionsMessage={() =>
+                  newMenuCategory.id_category
+                    ? "Semua menu sudah ditambahkan ke kategori ini"
+                    : "Pilih kategori dulu, atau semua menu tersedia"
+                }
               />
               <small style={{ color: "#b0bec5", fontSize: "11px" }}>
-                Menu yang dipilih akan tampil untuk kategori user ini.
+                Bisa pilih banyak menu sekaligus. Menu yang sudah ada di kategori ini disembunyikan.
               </small>
             </div>
           </div>
         </Modal.Body>
         <Modal.Footer style={{ borderTop: "1px solid #eceff1" }}>
-          <Button className="btn btn-light" onClick={() => setAddModalVisible(false)}>
+          <Button className="btn btn-light" onClick={() => setAddModalVisible(false)} disabled={savingBulk}>
             Batal
           </Button>
-          <Button onClick={handleAddMenuCategory} style={{ background: "#2471a3", border: "none", fontWeight: 600 }}>
-            <i className="mdi mdi-plus" style={{ marginRight: "5px" }}></i>Tambah
+          <Button
+            onClick={handleAddBulk}
+            disabled={savingBulk}
+            style={{ background: "#2471a3", border: "none", fontWeight: 600 }}
+          >
+            <i className="mdi mdi-plus" style={{ marginRight: "5px" }}></i>
+            {savingBulk
+              ? "Menyimpan..."
+              : addMenuIds.length > 1
+                ? `Tambah ${addMenuIds.length} Menu`
+                : "Tambah"}
           </Button>
         </Modal.Footer>
       </Modal>
