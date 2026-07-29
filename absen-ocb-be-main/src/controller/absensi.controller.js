@@ -738,6 +738,8 @@ const rekapKalender = async (req, res) => {
     const users = await absensiModel.getRekapKalenderUsers(targetMonth, retail_id || null);
     const absensiRows = await absensiModel.getRekapKalenderAbsensi(targetMonth, retail_id || null);
     const offdayRows = await absensiModel.getRekapKalenderOffday(targetMonth, retail_id || null);
+    const sesiCompleteRows = await absensiModel.getRekapKalenderSesiComplete(targetMonth, retail_id || null);
+    const lemburRows = await absensiModel.getRekapKalenderLembur(targetMonth, retail_id || null);
 
     const toDateStr = (val) => {
       if (!val) return null;
@@ -769,6 +771,20 @@ const rekapKalender = async (req, res) => {
       offdayMap[`${row.user_id}_${dateStr}`] = true;
     }
 
+    // Map sesi lengkap (strict) + lembur: key = "userId_YYYY-MM-DD" → true.
+    const completeMap = {};
+    for (const row of sesiCompleteRows) {
+      const dateStr = toDateStr(row.tanggal);
+      if (!dateStr) continue;
+      completeMap[`${row.user_id}_${dateStr}`] = true;
+    }
+    const lemburMap = {};
+    for (const row of lemburRows) {
+      const dateStr = toDateStr(row.tanggal);
+      if (!dateStr) continue;
+      lemburMap[`${row.user_id}_${dateStr}`] = true;
+    }
+
     // Group users by retail
     const retailMap = {};
     for (const user of users) {
@@ -787,9 +803,19 @@ const rekapKalender = async (req, res) => {
         if (offdayMap[key]) {
           attendance[d] = { status: "libur", time: null };
         } else if (absensiMap[key]?.status === 1) {
-          attendance[d] = { status: "hadir", time: absensiMap[key].time };
+          attendance[d] = {
+            status: "hadir",
+            time: absensiMap[key].time,
+            complete: Boolean(completeMap[key]),
+            lembur: Boolean(lemburMap[key]),
+          };
         } else if (absensiMap[key]?.status === 2) {
-          attendance[d] = { status: "terlambat", time: absensiMap[key].time };
+          attendance[d] = {
+            status: "terlambat",
+            time: absensiMap[key].time,
+            complete: Boolean(completeMap[key]),
+            lembur: Boolean(lemburMap[key]),
+          };
         } else {
           const cellDate = moment.tz(dateStr, timezone).startOf("day");
           const today = moment().tz(timezone).startOf("day");

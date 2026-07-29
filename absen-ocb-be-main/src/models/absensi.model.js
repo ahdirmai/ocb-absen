@@ -590,6 +590,46 @@ const getRekapKalenderAbsensi = async (month, retailId) => {
     return rows;
 };
 
+// Set (user_id, tanggal) yang punya sesi REGULAR closed (masuk+keluar lengkap).
+// Untuk mode STRICT rekap. is_lembur=0. tanggal = tanggal masuk (anchor sesi),
+// konsisten dengan tanggal hadir (yang juga dari masuk) — cross-date aman.
+const getRekapKalenderSesiComplete = async (month, retailId) => {
+    let query = `
+        SELECT DISTINCT s.user_id, DATE(s.tanggal) AS tanggal
+        FROM absensi_sesi s
+        WHERE DATE_FORMAT(s.tanggal, '%Y-%m') = ?
+          AND s.is_lembur = 0 AND s.status = 'closed'
+    `;
+    const params = [month];
+    if (retailId) { query += ` AND s.retail_id = ?`; params.push(retailId); }
+    const [rows] = await dbpool.execute(query, params);
+    return rows;
+};
+
+// (user_id, tanggal) yang lembur. Gabung dua sumber supaya transisi data mulus:
+//  - masuk 2x+ dalam 1 hari (data historis, flag is_lembur belum dipakai)
+//  - is_lembur=1 (fitur lembur baru)
+// tanggal = DATE(absen_time) baris masuk.
+const getRekapKalenderLembur = async (month, retailId) => {
+    const retailFilter = retailId ? ` AND a.retail_id = ?` : ``;
+    const query = `
+        SELECT user_id, tanggal FROM (
+          SELECT a.user_id, DATE(a.absen_time) AS tanggal, COUNT(*) cnt
+          FROM absensi a JOIN tipe_absen ta ON ta.absen_id = a.absen_type_id
+          WHERE ta.description LIKE '%masuk%'
+            AND DATE_FORMAT(a.absen_time, '%Y-%m') = ?${retailFilter}
+          GROUP BY a.user_id, DATE(a.absen_time) HAVING cnt >= 2
+        ) ganda
+        UNION
+        SELECT DISTINCT a.user_id, DATE(a.absen_time) AS tanggal
+        FROM absensi a
+        WHERE a.is_lembur = 1 AND DATE_FORMAT(a.absen_time, '%Y-%m') = ?${retailFilter}
+    `;
+    const params = retailId ? [month, retailId, month, retailId] : [month, month];
+    const [rows] = await dbpool.execute(query, params);
+    return rows;
+};
+
 const getRekapKalenderOffday = async (month, retailId) => {
     let query = `
         SELECT oe.user_id, DATE(o.tanggal) AS tanggal
@@ -634,5 +674,7 @@ module.exports={
     getApprovedMasukCount,
     getRekapKalenderUsers,
     getRekapKalenderAbsensi,
+    getRekapKalenderSesiComplete,
+    getRekapKalenderLembur,
     getRekapKalenderOffday
 }

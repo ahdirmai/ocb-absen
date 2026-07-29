@@ -6,11 +6,26 @@ import { saveAs } from "file-saver";
 const VITE_API_URL = import.meta.env.VITE_API_URL;
 
 const STATUS_CONFIG = {
-  hadir:     { bg: "#28a745", color: "#fff", label: "H", excelBg: "FF28a745" },
-  terlambat: { bg: "#ffc107", color: "#000", label: "T", excelBg: "FFffc107" },
-  alpha:     { bg: "#dc3545", color: "#fff", label: "A", excelBg: "FFdc3545" },
-  libur:     { bg: "#adb5bd", color: "#fff", label: "L", excelBg: "FFadb5bd" },
-  belum:     { bg: "#f8f9fa", color: "#ccc", label: "-", excelBg: "FFf8f9fa" },
+  hadir:         { bg: "#28a745", color: "#fff", label: "H", excelBg: "FF28a745" },
+  terlambat:     { bg: "#ffc107", color: "#000", label: "T", excelBg: "FFffc107" },
+  tidak_lengkap: { bg: "#fb8c00", color: "#fff", label: "TL", excelBg: "FFfb8c00" },
+  alpha:         { bg: "#dc3545", color: "#fff", label: "A", excelBg: "FFdc3545" },
+  libur:         { bg: "#adb5bd", color: "#fff", label: "L", excelBg: "FFadb5bd" },
+  belum:         { bg: "#f8f9fa", color: "#ccc", label: "-", excelBg: "FFf8f9fa" },
+};
+
+const LEMBUR_DOT = "#1e88e5"; // penanda lembur (badge biru)
+const INCOMPLETE_BORDER = "#fb8c00"; // penanda telat-tak-lengkap (border oranye)
+
+// Derive status tampil dari mode + kelengkapan sesi.
+//  moderat: apa adanya. strict: hadir-tak-lengkap → tidak_lengkap; telat-tak-
+//  lengkap tetap terlambat (ditandai border, bukan ganti status).
+const resolveStatus = (cell, mode) => {
+  const status = typeof cell === "string" ? cell : cell?.status;
+  if (mode !== "strict") return status;
+  const complete = typeof cell === "object" ? cell?.complete : true;
+  if (status === "hadir" && complete === false) return "tidak_lengkap";
+  return status;
 };
 
 const RekapKalender = () => {
@@ -25,6 +40,12 @@ const RekapKalender = () => {
   const [error, setError] = useState(null);
   const [tooltip, setTooltip] = useState({ visible: false, text: "", x: 0, y: 0 });
   const tooltipTimeout = useRef(null);
+  // Mode rekap: "moderat" (hadir = ada masuk) | "strict" (wajib masuk+keluar).
+  const [mode, setMode] = useState(() => localStorage.getItem("rekap_mode") || "moderat");
+
+  useEffect(() => {
+    localStorage.setItem("rekap_mode", mode);
+  }, [mode]);
 
   const fetchRekap = async () => {
     setLoading(true);
@@ -98,45 +119,65 @@ const RekapKalender = () => {
     try {
       const wb = new ExcelJS.Workbook();
 
+      const isStrict = mode === "strict";
+
       // ── Sheet 1: Rekap ringkasan ──
       const wsSummary = wb.addWorksheet("Rekap");
-      const summaryHeader = ["No", "Retail", "Nama Karyawan", "Hadir", "Terlambat", "Alpha", "Libur"];
+      // Kolom dinamis: Lembur selalu; Tidak Lengkap hanya strict.
+      const summaryHeader = ["No", "Retail", "Nama Karyawan", "Hadir", "Terlambat"];
+      if (isStrict) summaryHeader.push("Tidak Lengkap");
+      summaryHeader.push("Lembur", "Alpha", "Libur");
       const shRow = wsSummary.addRow(summaryHeader);
       shRow.height = 22;
       shRow.eachCell((cell) => applyHeaderStyle(cell));
       wsSummary.getColumn(1).width = 5;
       wsSummary.getColumn(2).width = 22;
       wsSummary.getColumn(3).width = 28;
-      [4, 5, 6, 7].forEach((c) => (wsSummary.getColumn(c).width = 12));
+      for (let c = 4; c <= summaryHeader.length; c++) wsSummary.getColumn(c).width = 13;
       wsSummary.views = [{ state: "frozen", xSplit: 0, ySplit: 1 }];
+
+      // Warna per nama kolom (biar tak tergantung indeks yg berubah krn mode).
+      const colColor = {
+        Hadir: { bg: "FF28a745", font: "FFffffff" },
+        Terlambat: { bg: "FFffc107", font: "FF000000" },
+        "Tidak Lengkap": { bg: "FFfb8c00", font: "FFffffff" },
+        Lembur: { bg: "FF1e88e5", font: "FFffffff" },
+        Alpha: { bg: "FFdc3545", font: "FFffffff" },
+        Libur: { bg: "FFadb5bd", font: "FFffffff" },
+      };
 
       let no = 1;
       for (const retail of data) {
         for (const user of retail.users) {
-          let hadir = 0, terlambat = 0, alpha = 0, libur = 0;
+          let hadir = 0, terlambat = 0, tidakLengkap = 0, lembur = 0, alpha = 0, libur = 0;
           for (let d = 1; d <= daysInMonth; d++) {
             const cell = user.attendance[d] || { status: "belum" };
-            const s = typeof cell === "string" ? cell : cell.status;
+            const s = resolveStatus(cell, mode);
             if (s === "hadir") hadir++;
             else if (s === "terlambat") terlambat++;
+            else if (s === "tidak_lengkap") tidakLengkap++;
             else if (s === "alpha") alpha++;
             else if (s === "libur") libur++;
+            if (typeof cell === "object" && cell.lembur === true) lembur++;
           }
-          const r = wsSummary.addRow([no++, retail.retail_name, user.name, hadir, terlambat, alpha, libur]);
+          const rowVals = [no++, retail.retail_name, user.name, hadir, terlambat];
+          if (isStrict) rowVals.push(tidakLengkap);
+          rowVals.push(lembur, alpha, libur);
+          const r = wsSummary.addRow(rowVals);
           r.height = 18;
-          r.getCell(1).border = r.getCell(2).border = r.getCell(3).border = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
-          r.getCell(1).alignment = r.getCell(2).alignment = r.getCell(3).alignment = { vertical: "middle" };
-          r.getCell(1).font = r.getCell(2).font = r.getCell(3).font = { size: 9 };
-
-          const colorMap = { 4: "FF28a745", 5: "FFffc107", 6: "FFdc3545", 7: "FFadb5bd" };
-          const fontMap = { 4: "FFffffff", 5: "FF000000", 6: "FFffffff", 7: "FFffffff" };
-          [4, 5, 6, 7].forEach((col) => {
+          [1, 2, 3].forEach((col) => {
+            r.getCell(col).border = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
+            r.getCell(col).alignment = { vertical: "middle" };
+            r.getCell(col).font = { size: 9 };
+          });
+          for (let col = 4; col <= summaryHeader.length; col++) {
+            const cc = colColor[summaryHeader[col - 1]] || { bg: "FFffffff", font: "FF000000" };
             const c = r.getCell(col);
             c.alignment = { horizontal: "center", vertical: "middle" };
-            c.font = { bold: true, size: 9, color: { argb: fontMap[col] } };
-            c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: colorMap[col] } };
+            c.font = { bold: true, size: 9, color: { argb: cc.font } };
+            c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: cc.bg } };
             c.border = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
-          });
+          }
         }
       }
 
@@ -162,23 +203,34 @@ const RekapKalender = () => {
           const cellMeta = [null];
           for (let d = 1; d <= daysInMonth; d++) {
             const cell = user.attendance[d] || { status: "belum", time: null };
-            const status = typeof cell === "string" ? cell : cell.status;
+            const status = resolveStatus(cell, mode);
             const time = typeof cell === "object" ? cell.time : null;
-            rowData.push(time ? time : status === "libur" ? "Libur" : status === "alpha" ? "Alpha" : "-");
-            cellMeta.push({ status, time });
+            const isLembur = typeof cell === "object" && cell.lembur === true;
+            let text = time ? time : status === "libur" ? "Libur" : status === "alpha" ? "Alpha" : status === "tidak_lengkap" ? "Tdk Lengkap" : "-";
+            if (isLembur) text = `${text} (L)`;
+            rowData.push(text);
+            cellMeta.push({ status, time, isLembur });
           }
           const dataRow = ws.addRow(rowData);
           dataRow.height = 20;
           dataRow.eachCell((exCell, colNum) => {
             const meta = cellMeta[colNum - 1];
             applyDataCell(exCell, meta?.status, colNum === 1);
+            if (meta?.isLembur && colNum > 1) {
+              exCell.border = {
+                top: { style: "medium", color: { argb: "FF1e88e5" } },
+                bottom: { style: "medium", color: { argb: "FF1e88e5" } },
+                left: { style: "medium", color: { argb: "FF1e88e5" } },
+                right: { style: "medium", color: { argb: "FF1e88e5" } },
+              };
+            }
           });
         }
       }
 
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      saveAs(blob, `Rekap_Absensi_${month}.xlsx`);
+      saveAs(blob, `Rekap_Absensi_${month}_${mode}.xlsx`);
     } finally {
       setExporting(false);
     }
@@ -191,8 +243,8 @@ const RekapKalender = () => {
       </div>
 
       <div className="row mb-3">
-        <div className="col-md-5 d-flex align-items-end gap-2">
-          <div className="w-100">
+        <div className="col-md-7 d-flex align-items-end gap-2 flex-wrap">
+          <div style={{ minWidth: 160 }}>
             <label>Bulan:</label>
             <input
               type="month"
@@ -200,6 +252,34 @@ const RekapKalender = () => {
               value={month}
               onChange={(e) => setMonth(e.target.value)}
             />
+          </div>
+          {/* Toggle mode */}
+          <div>
+            <label style={{ display: "block", fontSize: 12, color: "#607d8b", fontWeight: 600 }}>Mode</label>
+            <div style={{ display: "inline-flex", background: "#eceff1", borderRadius: 999, padding: 3 }}>
+              {[
+                { key: "moderat", label: "Moderat" },
+                { key: "strict", label: "Strict" },
+              ].map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => setMode(opt.key)}
+                  title={opt.key === "strict" ? "Wajib absen masuk DAN keluar" : "Cukup absen masuk"}
+                  style={{
+                    border: "none",
+                    borderRadius: 999,
+                    padding: "6px 16px",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    background: mode === opt.key ? "#e74c3c" : "transparent",
+                    color: mode === opt.key ? "#fff" : "#607d8b",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
           <button className="btn btn-gradient-info btn-sm mb-1" onClick={fetchRekap}>
             Tampilkan
@@ -215,21 +295,38 @@ const RekapKalender = () => {
         </div>
       </div>
 
+      {mode === "strict" && (
+        <div className="alert alert-warning py-2 mb-3" style={{ fontSize: 13 }}>
+          <b>Mode Strict:</b> hari absen masuk tanpa absen keluar ditandai <b>Tidak Lengkap</b> (oranye).
+          Telat tanpa keluar tetap Telat dengan border oranye.
+        </div>
+      )}
+
       {/* Legend */}
-      <div className="d-flex gap-3 mb-3 flex-wrap">
-        {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-          key !== "belum" && (
+      <div className="d-flex gap-3 mb-3 flex-wrap align-items-center">
+        {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
+          if (key === "belum") return null;
+          if (key === "tidak_lengkap" && mode !== "strict") return null;
+          const labels = {
+            hadir: "Hadir",
+            terlambat: "Terlambat",
+            tidak_lengkap: "Tidak Lengkap",
+            alpha: "Alpha",
+            libur: "Libur/Off",
+          };
+          return (
             <div key={key} className="d-flex align-items-center gap-1">
               <div style={{ width: 18, height: 18, background: cfg.bg, borderRadius: 3, border: "1px solid #ddd" }} />
-              <small>
-                {key === "hadir" && "Hadir"}
-                {key === "terlambat" && "Terlambat"}
-                {key === "alpha" && "Alpha"}
-                {key === "libur" && "Libur/Off"}
-              </small>
+              <small>{labels[key]}</small>
             </div>
-          )
-        ))}
+          );
+        })}
+        <div className="d-flex align-items-center gap-1">
+          <div style={{ width: 18, height: 18, background: "#28a745", borderRadius: 3, border: "1px solid #ddd", position: "relative" }}>
+            <span style={{ position: "absolute", top: 1, right: 1, width: 6, height: 6, borderRadius: "50%", background: LEMBUR_DOT, border: "1px solid #fff" }} />
+          </div>
+          <small>Lembur</small>
+        </div>
       </div>
 
       {loading && <p>Loading data...</p>}
@@ -266,26 +363,57 @@ const RekapKalender = () => {
                       <td style={tdStyle(160, true)}>{user.name}</td>
                       {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((d) => {
                         const cell = user.attendance[d] || { status: "belum", time: null };
-                        const status = typeof cell === "string" ? cell : cell.status;
+                        const rawStatus = typeof cell === "string" ? cell : cell.status;
+                        const status = resolveStatus(cell, mode);
                         const time = typeof cell === "object" ? cell.time : null;
+                        const isLembur = typeof cell === "object" && cell.lembur === true;
+                        const incompleteLate =
+                          mode === "strict" && status === "terlambat" &&
+                          typeof cell === "object" && cell.complete === false;
                         const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.belum;
                         const dateLabel = `${String(d).padStart(2, "0")}/${String(mon).padStart(2, "0")}/${year}`;
-                        const tooltipText = time
-                          ? `Absen: ${time}`
-                          : status === "libur" ? `${dateLabel} — Libur / Off`
-                          : status === "alpha" ? `${dateLabel} — Alpha (tidak absen)`
-                          : status === "belum" ? `${dateLabel} — Belum wajib absen`
-                          : dateLabel;
+                        const parts = [];
+                        if (time) parts.push(`Absen: ${time}`);
+                        else if (rawStatus === "libur") parts.push(`${dateLabel} — Libur / Off`);
+                        else if (rawStatus === "alpha") parts.push(`${dateLabel} — Alpha (tidak absen)`);
+                        else if (rawStatus === "belum") parts.push(`${dateLabel} — Belum wajib absen`);
+                        else parts.push(dateLabel);
+                        if (status === "tidak_lengkap") parts.push("Tidak absen keluar");
+                        if (incompleteLate) parts.push("Telat + tidak absen keluar");
+                        if (isLembur) parts.push("Lembur (masuk 2x / flag lembur)");
+                        const tooltipText = parts.join(" • ");
                         return (
                           <td
                             key={d}
                             onMouseMove={(e) => tooltipText && showTooltip(e, tooltipText)}
                             onMouseLeave={hideTooltip}
-                            style={{ ...tdStyle(28), background: cfg.bg, textAlign: "center", cursor: "default" }}
+                            style={{
+                              ...tdStyle(28),
+                              background: cfg.bg,
+                              textAlign: "center",
+                              cursor: "default",
+                              position: "relative",
+                              boxShadow: incompleteLate ? `inset 0 0 0 2px ${INCOMPLETE_BORDER}` : undefined,
+                            }}
                           >
                             <span style={{ color: cfg.color, fontSize: 10, fontWeight: "bold" }}>
                               {cfg.label}
                             </span>
+                            {isLembur && (
+                              <span
+                                title="Lembur"
+                                style={{
+                                  position: "absolute",
+                                  top: 1,
+                                  right: 1,
+                                  width: 7,
+                                  height: 7,
+                                  borderRadius: "50%",
+                                  background: LEMBUR_DOT,
+                                  border: "1px solid #fff",
+                                }}
+                              />
+                            )}
                           </td>
                         );
                       })}
