@@ -169,6 +169,42 @@ const UpdateApp = () => {
         </p>
       </div>
 
+      {/* Pilih sesuai jenis HP */}
+      <div
+        style={{
+          background: "#eef4fb",
+          border: "1px solid #2471a3",
+          borderRadius: "12px",
+          padding: "14px",
+          marginBottom: "20px",
+        }}
+      >
+        <p style={{ margin: "0 0 10px", fontWeight: "bold", color: "#1a5276", fontSize: "15px" }}>
+          Pilih sesuai jenis HP Anda
+        </p>
+        <div style={{ display: "flex", gap: "10px", marginBottom: "6px" }}>
+          <div style={{ fontSize: "22px", flexShrink: 0, color: "#2471a3" }}>
+            <i className="mdi mdi-android"></i>
+          </div>
+          <p style={{ margin: 0, fontSize: "14px", color: "#1a5276", lineHeight: 1.6 }}>
+            <b>HP Android</b> — pasang aplikasi Absensi OCB. Ikuti langkah pemasangan di bawah.
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: "10px" }}>
+          <div style={{ fontSize: "22px", flexShrink: 0, color: "#2471a3" }}>
+            <i className="mdi mdi-apple"></i>
+          </div>
+          <p style={{ margin: 0, fontSize: "14px", color: "#1a5276", lineHeight: 1.6 }}>
+            <b>HP iPhone (iOS)</b> — tidak perlu pasang aplikasi. Absen lewat website:
+            buka{" "}
+            <a href="/absen" style={{ color: "#2471a3", fontWeight: "bold" }}>
+              halaman absen
+            </a>{" "}
+            di browser (Safari/Chrome), lalu login. Cara absen &amp; lembur sama seperti di bawah.
+          </p>
+        </div>
+      </div>
+
       <div
         style={{
           background: "#fdecea",
@@ -179,12 +215,12 @@ const UpdateApp = () => {
         }}
       >
         <p style={{ margin: "0 0 6px", fontWeight: "bold", color: "#c0392b" }}>
-          Baca dulu sebelum mulai
+          Baca dulu sebelum mulai (Android)
         </p>
         <p style={{ margin: 0, fontSize: "14px", color: "#7b241c", lineHeight: 1.6 }}>
           Hapus dulu aplikasi lama sebelum memasang yang baru. Data absensi Anda{" "}
           <b>tidak hilang</b> karena tersimpan di server — cukup login kembali
-          setelah selesai.
+          setelah selesai. <i>(Pengguna iPhone lewati langkah pemasangan ini.)</i>
         </p>
       </div>
 
