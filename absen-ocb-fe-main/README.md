@@ -33,7 +33,7 @@ VITE_API_IMAGE=http://localhost:4000        # base URL file gambar/video (foto a
 ## Halaman utama
 
 - **Absensi** (`/absensi`) — riwayat absen, validasi/ignore/koreksi/hapus, export Excel. Toggle UI Lama/Baru.
-- **Kelola Sesi Absensi** (`/sesi-absensi`) — pairing sesi masuk↔keluar, match/unmatch, buat/tambah absen manual.
+- **Kelola Sesi Absensi** (`/sesi-absensi`) — pairing sesi masuk↔keluar, match/unmatch, buat/tambah absen manual (termasuk sesi lembur via toggle).
 - **Shifting** (`/shifting`) — assign shift ke karyawan per retail. Toggle UI Lama/Baru.
 - **Jadwal Harian** (`/jadwal-harian`) — matrix jadwal Sales Toko/Trainee (desktop) / list per-hari (mobile), import Excel.
 - **Tipe Absen** (`/typeabsen`) — kelola tipe absen; pasangan masuk+keluar tampil 1 baris. Toggle UI Lama/Baru.
