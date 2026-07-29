@@ -83,6 +83,15 @@ const ymd = (v) =>
     ? `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, "0")}-${String(v.getDate()).padStart(2, "0")}`
     : String(v).slice(0, 10);
 
+// HH:mm dari DATETIME (objek Date atau string). String(Date).slice() tak jalan
+// (format toString berbeda) — ambil komponen lokal langsung utk tampilan.
+const hm = (v) =>
+  v instanceof Date
+    ? `${String(v.getHours()).padStart(2, "0")}:${String(v.getMinutes()).padStart(2, "0")}`
+    : String(v).slice(11, 16);
+
+const dt = (v) => `${ymd(v)} ${hm(v)}`;
+
 // Kategori sesi = kategori tipe MASUK; fallback kategori tipe KELUAR pasangan
 // (by name) bila NULL — selaras engine live (absensi.controller.js).
 async function resolveKategori(conn, masukType) {
@@ -180,8 +189,8 @@ async function resolveJadwal(conn, userId, tanggal, typeIds) {
       console.table(
         broken.map((b) => ({
           sesi_id: b.sesi_id, user: b.username, shift: b.shift_name,
-          masuk: ymd(b.masuk_time) + " " + String(b.masuk_time).slice(11, 16),
-          keluar: ymd(b.keluar_time) + " " + String(b.keluar_time).slice(11, 16),
+          masuk: dt(b.masuk_time),
+          keluar: dt(b.keluar_time),
         }))
       );
     }
@@ -242,8 +251,8 @@ async function resolveJadwal(conn, userId, tanggal, typeIds) {
           tgl: p.g.tanggal,
           user: p.g.user_id,
           status: p.type,
-          masuk: p.masuk ? String(p.masuk.absen_time).slice(0, 16) : "—",
-          keluar: p.keluar ? String(p.keluar.absen_time).slice(0, 16) : "—",
+          masuk: p.masuk ? dt(p.masuk.absen_time) : "—",
+          keluar: p.keluar ? dt(p.keluar.absen_time) : "—",
         }))
       );
     }
