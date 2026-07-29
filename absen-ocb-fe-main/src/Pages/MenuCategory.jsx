@@ -55,11 +55,12 @@ const MenuCategoryBaru = ({
   loading,
   error,
   stats,
-  rows,
-  columns,
+  groupedRows,
   globalSearch,
   setGlobalSearch,
   onAdd,
+  onAddForCategory,
+  onDeleteRow,
 }) => {
   return (
     <div style={{ padding: "4px 2px" }}>
@@ -91,7 +92,7 @@ const MenuCategoryBaru = ({
               <input
                 type="text"
                 className="form-control"
-                placeholder="Kategori user, nama menu, parent..."
+                placeholder="Kategori user atau nama menu..."
                 value={globalSearch}
                 onChange={(e) => setGlobalSearch(e.target.value)}
                 style={{ paddingLeft: "34px", borderRadius: "10px" }}
@@ -108,59 +109,158 @@ const MenuCategoryBaru = ({
         </div>
       </div>
 
-      {/* Tabel */}
-      <div
-        style={{
-          background: "#fff",
-          borderRadius: "14px",
-          padding: "6px",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-        }}
-      >
-        {loading ? (
-          <div style={{ textAlign: "center", padding: "40px", color: "#90a4ae" }}>
-            <i className="mdi mdi-loading mdi-spin" style={{ fontSize: "28px" }}></i>
-            <p style={{ marginTop: "8px" }}>Memuat data...</p>
-          </div>
-        ) : error ? (
-          <div style={{ textAlign: "center", padding: "40px", color: "#c62828" }}>
-            <i className="mdi mdi-alert-circle" style={{ fontSize: "28px" }}></i>
-            <p style={{ marginTop: "8px" }}>Error: {error}</p>
-          </div>
-        ) : rows.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "48px", color: "#b0bec5" }}>
-            <i className="mdi mdi-cog-off" style={{ fontSize: "36px" }}></i>
-            <p style={{ marginTop: "8px" }}>Tidak ada config menu.</p>
-          </div>
-        ) : (
-          <DataTable
-            keyField="id"
-            columns={columns}
-            data={rows}
-            pagination
-            responsive
-            highlightOnHover
-            fixedHeader
-            fixedHeaderScrollHeight="62vh"
-            defaultSortFieldId={1}
-            defaultSortAsc
-            customStyles={{
-              headCells: {
-                style: {
-                  background: "#f5f7fa",
-                  color: "#546e7a",
-                  fontSize: "12px",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.3px",
-                },
-              },
-              rows: { style: { minHeight: "56px", fontSize: "13px" } },
-              cells: { style: { paddingTop: "6px", paddingBottom: "6px" } },
-            }}
-          />
-        )}
-      </div>
+      {/* Kartu per kategori */}
+      {loading ? (
+        <div style={{ textAlign: "center", padding: "40px", color: "#90a4ae" }}>
+          <i className="mdi mdi-loading mdi-spin" style={{ fontSize: "28px" }}></i>
+          <p style={{ marginTop: "8px" }}>Memuat data...</p>
+        </div>
+      ) : error ? (
+        <div style={{ textAlign: "center", padding: "40px", color: "#c62828" }}>
+          <i className="mdi mdi-alert-circle" style={{ fontSize: "28px" }}></i>
+          <p style={{ marginTop: "8px" }}>Error: {error}</p>
+        </div>
+      ) : groupedRows.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "48px", color: "#b0bec5", background: "#fff", borderRadius: "14px" }}>
+          <i className="mdi mdi-cog-off" style={{ fontSize: "36px" }}></i>
+          <p style={{ marginTop: "8px" }}>Tidak ada config menu.</p>
+        </div>
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gap: "14px",
+            gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+          }}
+        >
+          {groupedRows.map((grp) => (
+            <div
+              key={grp.key}
+              style={{
+                background: "#fff",
+                borderRadius: "14px",
+                boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+              }}
+            >
+              {/* Header kartu */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "8px",
+                  padding: "13px 16px",
+                  borderBottom: "1px solid #f0f2f5",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "9px", minWidth: 0 }}>
+                  <span
+                    style={{
+                      width: "34px",
+                      height: "34px",
+                      borderRadius: "9px",
+                      background: "#e3f2fd",
+                      color: "#1976d2",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "17px",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <i className="mdi mdi-account-group"></i>
+                  </span>
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        color: "#263238",
+                        fontSize: "14px",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {grp.category_user}
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#90a4ae" }}>
+                      {grp.items.length} menu
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => onAddForCategory(grp)}
+                  title="Tambah menu ke kategori ini"
+                  style={{
+                    border: "none",
+                    background: "#eef4fb",
+                    color: "#2471a3",
+                    borderRadius: "8px",
+                    padding: "6px 10px",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    flexShrink: 0,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  <i className="mdi mdi-plus"></i> Menu
+                </button>
+              </div>
+
+              {/* Chip menu */}
+              <div style={{ padding: "12px 16px", display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                {grp.items.map((it) => (
+                  <span
+                    key={it.id}
+                    title={it.parent_name ? `Parent: ${it.parent_name}` : "Menu root"}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      background: "#f4f6f8",
+                      border: "1px solid #eceff1",
+                      borderRadius: "999px",
+                      padding: "5px 6px 5px 12px",
+                      fontSize: "12px",
+                      color: "#37474f",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {it.parent_name && (
+                      <i className="mdi mdi-subdirectory-arrow-right" style={{ color: "#b0bec5", fontSize: "13px" }}></i>
+                    )}
+                    {it.menu_name || "-"}
+                    <button
+                      onClick={() => onDeleteRow(it)}
+                      title="Hapus menu dari kategori ini"
+                      style={{
+                        border: "none",
+                        background: "#ffebee",
+                        color: "#c62828",
+                        width: "20px",
+                        height: "20px",
+                        borderRadius: "50%",
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "13px",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <i className="mdi mdi-close"></i>
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -320,6 +420,36 @@ const MenuCategory = () => {
     return { total: displayedRows.length, kategori: kat.size, menu: menu.size };
   }, [displayedRows]);
 
+  // Grup config per kategori user (UI Baru kartu). 1 kartu = 1 kategori, menu
+  // jadi chip di dalamnya. Simpan id_category (dari salah satu item) untuk
+  // preset modal Tambah "Menu" pada kategori itu.
+  const groupedRows = useMemo(() => {
+    const map = new Map();
+    displayedRows.forEach((row) => {
+      const key = String(row.category_user || "-").trim();
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          category_user: row.category_user || "-",
+          id_category: row.id_category,
+          items: [],
+        });
+      }
+      const grp = map.get(key);
+      if (grp.id_category == null && row.id_category != null) {
+        grp.id_category = row.id_category;
+      }
+      grp.items.push(row);
+    });
+    const list = Array.from(map.values());
+    list.forEach((g) =>
+      g.items.sort((a, b) =>
+        String(a.menu_name || "").localeCompare(String(b.menu_name || ""))
+      )
+    );
+    return list.sort((a, b) => a.key.localeCompare(b.key));
+  }, [displayedRows]);
+
   const handleAddMenuCategory = async () => {
     try {
       const token = localStorage.getItem("token");
@@ -375,6 +505,15 @@ const MenuCategory = () => {
   const handleUpdate = (row) => {
     setSelectedMenuCategory(row);
     setModalVisible(true);
+  };
+
+  // Buka modal Tambah dengan kategori sudah terisi (dari kartu grup).
+  const handleAddForCategory = (grp) => {
+    setnewMenuCategory({ id_category: grp.id_category ?? "", menu_id: "" });
+    const g = groups.find((x) => x.value === grp.id_category);
+    setSelectedGroup(g || null);
+    setSelectedmenus(null);
+    setAddModalVisible(true);
   };
 
   // const handleRetailChange = (selectedOption) => {
@@ -565,114 +704,6 @@ const MenuCategory = () => {
     }
   ];
 
-  const pill = (bg, text, label) => (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "3px 10px",
-        borderRadius: "999px",
-        background: bg,
-        color: text,
-        fontSize: "11px",
-        fontWeight: 700,
-        whiteSpace: "nowrap",
-      }}
-    >
-      {label}
-    </span>
-  );
-  const iconBtn = (bg, title, onClick, icon) => (
-    <button
-      onClick={onClick}
-      title={title}
-      style={{
-        border: "none",
-        background: bg,
-        color: "#fff",
-        width: "30px",
-        height: "30px",
-        borderRadius: "7px",
-        cursor: "pointer",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        marginRight: "4px",
-        fontSize: "15px",
-      }}
-    >
-      <i className={`mdi ${icon}`}></i>
-    </button>
-  );
-
-  // Kolom UI BARU: sortable, badge, aksi ikon.
-  const columnsV2 = [
-    {
-      id: 1,
-      name: "Kategori User",
-      sortable: true,
-      selector: (row) => String(row.category_user || "").toLowerCase(),
-      cell: (row) => (
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "4px 0" }}>
-          <span
-            style={{
-              width: "30px",
-              height: "30px",
-              borderRadius: "8px",
-              background: "#e3f2fd",
-              color: "#1976d2",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "15px",
-              flexShrink: 0,
-            }}
-          >
-            <i className="mdi mdi-account-group"></i>
-          </span>
-          <span style={{ fontWeight: 600, color: "#2c3e50", fontSize: "13px" }}>
-            {row.category_user || "-"}
-          </span>
-        </div>
-      ),
-      grow: 1.6,
-    },
-    {
-      name: "Nama Menu",
-      sortable: true,
-      selector: (row) => String(row.menu_name || "").toLowerCase(),
-      cell: (row) =>
-        row.menu_name ? (
-          pill("#f3e5f5", "#8e24aa", row.menu_name)
-        ) : (
-          <span style={{ color: "#b0bec5", fontSize: "12px" }}>-</span>
-        ),
-      grow: 1.6,
-    },
-    {
-      name: "Parent Menu",
-      sortable: true,
-      selector: (row) => String(row.parent_name || "").toLowerCase(),
-      cell: (row) =>
-        row.parent_name ? (
-          <span style={{ fontSize: "12px", color: "#546e7a" }}>
-            <i className="mdi mdi-subdirectory-arrow-right" style={{ color: "#b0bec5" }}></i> {row.parent_name}
-          </span>
-        ) : (
-          <span style={{ color: "#b0bec5", fontSize: "12px" }}>— root —</span>
-        ),
-      grow: 1.6,
-    },
-    {
-      name: "Aksi",
-      cell: (row) => (
-        <div style={{ display: "flex", alignItems: "center" }}>
-          {iconBtn("#fb8c00", "Edit config menu", () => handleUpdate(row), "mdi-pencil")}
-          {iconBtn("#c62828", "Hapus config menu", () => handleDelete(row), "mdi-delete")}
-        </div>
-      ),
-      width: "110px",
-    },
-  ];
 
   useEffect(() => {
     if (activeInput && inputRefs.current[activeInput]) {
@@ -729,11 +760,17 @@ const MenuCategory = () => {
           loading={loading}
           error={error}
           stats={stats}
-          rows={displayedRows}
-          columns={columnsV2}
+          groupedRows={groupedRows}
           globalSearch={globalSearch}
           setGlobalSearch={setGlobalSearch}
-          onAdd={() => setAddModalVisible(true)}
+          onAdd={() => {
+            setnewMenuCategory({ id_category: "", menu_id: "" });
+            setSelectedGroup(null);
+            setSelectedmenus(null);
+            setAddModalVisible(true);
+          }}
+          onAddForCategory={handleAddForCategory}
+          onDeleteRow={handleDelete}
         />
       ) : (
       <div className="row">
