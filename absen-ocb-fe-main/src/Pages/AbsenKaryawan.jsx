@@ -268,6 +268,17 @@ const hasTodayAttendanceForTimeCategory = (rows = [], type) =>
         return false;
       }
 
+      // Penutup shift cross-date (sesi closed) bertanggal hari ini (mis. keluar
+      // SORE 9 JAM 00:01 WIB) = milik shift KEMARIN, bukan bukti absen hari ini.
+      // Selaras guard buildTodayAttendanceStatus — else tipe kategori sama (sore)
+      // salah difilter → dropdown kosong.
+      if (
+        (item?.is_cross_date === 1 || item?.is_cross_date === "1") &&
+        item?.sesi_status === "closed"
+      ) {
+        return false;
+      }
+
       if (String(item.absen_type_id) === String(type.absen_id)) {
         return true;
       }
