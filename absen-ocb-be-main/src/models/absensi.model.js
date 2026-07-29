@@ -554,7 +554,7 @@ const getApprovedMasukCount = async (user_id, includeYesterday = false) => {
 const getRekapKalenderUsers = async (month, retailId) => {
     // Ambil user + retail + kategori dari shift aktif pada bulan tersebut.
     let query = `
-        SELECT DISTINCT u.user_id, u.name, u.category_user AS id_category,
+        SELECT DISTINCT u.user_id, u.name, u.username, u.category_user AS id_category,
                uc.category_user AS category_name,
                r.retail_id, r.name AS retail_name
         FROM user u

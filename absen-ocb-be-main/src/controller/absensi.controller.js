@@ -829,6 +829,7 @@ const rekapKalender = async (req, res) => {
       retailMap[user.retail_id].users.push({
         user_id: user.user_id,
         name: user.name,
+        username: user.username,
         id_category: user.id_category,
         category_name: user.category_name,
         attendance,

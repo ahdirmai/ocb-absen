@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import axios from "axios";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
+import Select from "react-select";
 
 const VITE_API_URL = import.meta.env.VITE_API_URL;
 
@@ -42,8 +43,8 @@ const RekapKalender = () => {
   const tooltipTimeout = useRef(null);
   // Mode rekap: "moderat" (hadir = ada masuk) | "strict" (wajib masuk+keluar).
   const [mode, setMode] = useState(() => localStorage.getItem("rekap_mode") || "moderat");
-  // Filter kategori user (id_category, "" = semua).
-  const [categoryFilter, setCategoryFilter] = useState("");
+  // Filter kategori user (array id_category, kosong = semua).
+  const [categoryFilter, setCategoryFilter] = useState([]);
 
   useEffect(() => {
     localStorage.setItem("rekap_mode", mode);
@@ -64,14 +65,14 @@ const RekapKalender = () => {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [data]);
 
-  // Data setelah filter kategori: buang user tak cocok, buang retail kosong.
+  // Data setelah filter kategori (multi): buang user tak cocok, retail kosong.
   const filteredData = useMemo(() => {
-    if (!categoryFilter) return data;
-    const cid = Number(categoryFilter);
+    if (!categoryFilter.length) return data;
+    const ids = new Set(categoryFilter.map(Number));
     return data
       .map((retail) => ({
         ...retail,
-        users: retail.users.filter((u) => Number(u.id_category) === cid),
+        users: retail.users.filter((u) => ids.has(Number(u.id_category))),
       }))
       .filter((retail) => retail.users.length > 0);
   }, [data, categoryFilter]);
@@ -86,13 +87,15 @@ const RekapKalender = () => {
         params: { month },
       });
       const raw = res.data.data || [];
+      // Sort natural OC: "OC 1" < "OC 2" < ... < "OC 10" (bukan 1,10,11).
+      // Regex izinkan spasi/nol depan: "OC 1", "OC01", "OC-1".
       raw.sort((a, b) => {
-        const ocA = a.retail_name.match(/^OC(\d+)/i);
-        const ocB = b.retail_name.match(/^OC(\d+)/i);
+        const ocA = a.retail_name.match(/^OC\s*0*(\d+)/i);
+        const ocB = b.retail_name.match(/^OC\s*0*(\d+)/i);
         if (!ocA && !ocB) return a.retail_name.localeCompare(b.retail_name);
         if (!ocA) return -1;
         if (!ocB) return 1;
-        return parseInt(ocA[1]) - parseInt(ocB[1]);
+        return parseInt(ocA[1], 10) - parseInt(ocB[1], 10);
       });
       setData(raw);
       setDaysInMonth(res.data.days_in_month || 0);
@@ -106,6 +109,22 @@ const RekapKalender = () => {
   useEffect(() => {
     fetchRekap();
   }, []);
+
+  // Ringkasan per user (dari resolveStatus + mode). Telat = BAGIAN dari hadir
+  // (hadir total termasuk telat + tidak-lengkap). Lembur terpisah (bukan hadir).
+  const summarizeUser = (user) => {
+    let hadir = 0, terlambat = 0, tidakLengkap = 0, lembur = 0;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const cell = user.attendance[d] || { status: "belum" };
+      const s = resolveStatus(cell, mode);
+      // Hadir = semua yang absen masuk: hadir + telat + (strict) tidak_lengkap.
+      if (s === "hadir" || s === "terlambat" || s === "tidak_lengkap") hadir++;
+      if (s === "terlambat") terlambat++;
+      if (s === "tidak_lengkap") tidakLengkap++;
+      if (typeof cell === "object" && cell.lembur === true) lembur++;
+    }
+    return { hadir, terlambat, tidakLengkap, lembur };
+  };
 
   const showTooltip = (e, text) => {
     clearTimeout(tooltipTimeout.current);
@@ -130,17 +149,6 @@ const RekapKalender = () => {
     cell.border = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
   };
 
-  const applyDataCell = (cell, status, isNameCol = false) => {
-    cell.border = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
-    cell.alignment = { horizontal: isNameCol ? "left" : "center", vertical: "middle" };
-    cell.font = { size: 9 };
-    if (!isNameCol) {
-      const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.belum;
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: cfg.excelBg } };
-      if (status === "terlambat") cell.font = { size: 9, color: { argb: "FF000000" } };
-      else if (status !== "belum") cell.font = { size: 9, color: { argb: "FFffffff" } };
-    }
-  };
 
   const exportExcel = async () => {
     const exportData = filteredData;
@@ -153,9 +161,10 @@ const RekapKalender = () => {
 
       // ── Sheet 1: Rekap ringkasan ──
       const wsSummary = wb.addWorksheet("Rekap");
-      // Kolom dinamis: Lembur selalu; Tidak Lengkap hanya strict.
-      const summaryHeader = ["No", "Retail", "Nama Karyawan", "Hadir", "Terlambat"];
-      if (isStrict) summaryHeader.push("Tidak Lengkap");
+      // Hadir = total (termasuk telat + TL). "Dari Telat"/"Dari TL" = subset hadir.
+      // Kolom dinamis: Lembur selalu; Dari TL hanya strict.
+      const summaryHeader = ["No", "Retail", "Nama Karyawan", "Hadir", "Dari Telat"];
+      if (isStrict) summaryHeader.push("Dari TL");
       summaryHeader.push("Lembur", "Alpha", "Libur");
       const shRow = wsSummary.addRow(summaryHeader);
       shRow.height = 22;
@@ -169,8 +178,8 @@ const RekapKalender = () => {
       // Warna per nama kolom (biar tak tergantung indeks yg berubah krn mode).
       const colColor = {
         Hadir: { bg: "FF28a745", font: "FFffffff" },
-        Terlambat: { bg: "FFffc107", font: "FF000000" },
-        "Tidak Lengkap": { bg: "FFfb8c00", font: "FFffffff" },
+        "Dari Telat": { bg: "FFffc107", font: "FF000000" },
+        "Dari TL": { bg: "FFfb8c00", font: "FFffffff" },
         Lembur: { bg: "FF1e88e5", font: "FFffffff" },
         Alpha: { bg: "FFdc3545", font: "FFffffff" },
         Libur: { bg: "FFadb5bd", font: "FFffffff" },
@@ -179,20 +188,18 @@ const RekapKalender = () => {
       let no = 1;
       for (const retail of exportData) {
         for (const user of retail.users) {
-          let hadir = 0, terlambat = 0, tidakLengkap = 0, lembur = 0, alpha = 0, libur = 0;
+          // hadir = summarizeUser.hadir (sudah termasuk telat + tidak_lengkap).
+          const sm = summarizeUser(user);
+          let alpha = 0, libur = 0;
           for (let d = 1; d <= daysInMonth; d++) {
             const cell = user.attendance[d] || { status: "belum" };
             const s = resolveStatus(cell, mode);
-            if (s === "hadir") hadir++;
-            else if (s === "terlambat") terlambat++;
-            else if (s === "tidak_lengkap") tidakLengkap++;
-            else if (s === "alpha") alpha++;
+            if (s === "alpha") alpha++;
             else if (s === "libur") libur++;
-            if (typeof cell === "object" && cell.lembur === true) lembur++;
           }
-          const rowVals = [no++, retail.retail_name, user.name, hadir, terlambat];
-          if (isStrict) rowVals.push(tidakLengkap);
-          rowVals.push(lembur, alpha, libur);
+          const rowVals = [no++, retail.retail_name, user.name, sm.hadir, sm.terlambat];
+          if (isStrict) rowVals.push(sm.tidakLengkap);
+          rowVals.push(sm.lembur, alpha, libur);
           const r = wsSummary.addRow(rowVals);
           r.height = 18;
           [1, 2, 3].forEach((col) => {
@@ -211,60 +218,106 @@ const RekapKalender = () => {
         }
       }
 
-      // ── Sheet 2+: Detail per retail ──
-      for (const retail of exportData) {
-        const ws = wb.addWorksheet(retail.retail_name.slice(0, 31));
-        const headerRow = ["Nama Karyawan"];
-        for (let d = 1; d <= daysInMonth; d++) {
-          headerRow.push(`${String(d).padStart(2, "0")}\n${dayNames[d - 1]}`);
-        }
-        const hRow = ws.addRow(headerRow);
-        hRow.height = 30;
-        hRow.eachCell((cell, colNum) => {
-          const isWeekend = colNum > 1 && (dayNames[colNum - 2] === "Min" || dayNames[colNum - 2] === "Sab");
-          applyHeaderStyle(cell, isWeekend);
-        });
-        ws.views = [{ state: "frozen", xSplit: 1, ySplit: 1 }];
-        ws.getColumn(1).width = 28;
-        for (let d = 1; d <= daysInMonth; d++) ws.getColumn(d + 1).width = 10;
+      // ── Sheet per-orang: detail vertikal TGL/HARI/STATUS/KETERANGAN ──
+      const usedNames = new Set();
+      const safeSheetName = (base) => {
+        let name = base.replace(/[\\/*?:[\]]/g, " ").slice(0, 31).trim() || "Sheet";
+        let n = name, i = 2;
+        while (usedNames.has(n)) { n = `${name.slice(0, 28)} ${i++}`; }
+        usedNames.add(n);
+        return n;
+      };
 
+      for (const retail of exportData) {
         for (const user of retail.users) {
-          const rowData = [user.name];
-          const cellMeta = [null];
+          const ws = wb.addWorksheet(safeSheetName(`${user.name} ${retail.retail_name}`));
+          ws.getColumn(1).width = 6;
+          ws.getColumn(2).width = 6;
+          ws.getColumn(3).width = 16;
+          ws.getColumn(4).width = 30;
+
+          // Judul: nama + meta (OC · ID OCB · Period).
+          ws.getCell("A1").value = user.name;
+          ws.getCell("A1").font = { bold: true, size: 13 };
+          ws.getCell("A2").value = `${retail.retail_name} · ID OCB: ${user.username || "-"} · Period ${month}`;
+          ws.getCell("A2").font = { size: 10, color: { argb: "FF64748b" } };
+
+          // Header tabel (row 4).
+          const head = ws.getRow(4);
+          ["TGL", "HARI", "STATUS", "KETERANGAN"].forEach((t, i) => {
+            const c = head.getCell(i + 1);
+            c.value = t;
+            c.font = { bold: true, size: 10 };
+            c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDBEAFE" } };
+            c.alignment = { horizontal: i < 3 ? "center" : "left", vertical: "middle" };
+            c.border = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
+          });
+          head.height = 18;
+
+          const sm = summarizeUser(user);
+          // Baris per tanggal mulai row 5.
           for (let d = 1; d <= daysInMonth; d++) {
             const cell = user.attendance[d] || { status: "belum", time: null };
-            const status = resolveStatus(cell, mode);
-            const time = typeof cell === "object" ? cell.time : null;
+            const rawStatus = resolveStatus(cell, mode);
             const isLembur = typeof cell === "object" && cell.lembur === true;
-            let text = time ? time : status === "libur" ? "Libur" : status === "alpha" ? "Alpha" : status === "tidak_lengkap" ? "Tdk Lengkap" : "-";
-            if (isLembur) text = `${text} (L)`;
-            rowData.push(text);
-            cellMeta.push({ status, time, isLembur });
+            const time = typeof cell === "object" ? cell.time : null;
+
+            // Label STATUS + warna.
+            let label = "—", fillArgb = null, fontArgb = "FF334155";
+            if (rawStatus === "hadir") { label = "Hadir"; fillArgb = "FFDCFCE7"; fontArgb = "FF166534"; }
+            else if (rawStatus === "terlambat") { label = "Telat"; fillArgb = "FFFEF9C3"; fontArgb = "FF854d0e"; }
+            else if (rawStatus === "tidak_lengkap") { label = "Tidak Lengkap"; fillArgb = "FFFFEDD5"; fontArgb = "FF9a3412"; }
+            else if (rawStatus === "libur") { label = "Libur"; fillArgb = "FFF1F5F9"; fontArgb = "FF475569"; }
+            // alpha/belum → "—" (tak ditandai).
+
+            // KETERANGAN: jam absen + penanda.
+            const ket = [];
+            if (time) ket.push(time.includes(" ") ? time.split(" ").slice(1).join(" ") : time);
+            if (rawStatus === "terlambat") ket.push("Telat");
+            if (rawStatus === "tidak_lengkap") ket.push("Tidak absen keluar");
+            if (isLembur) ket.push("Lembur");
+
+            const r = ws.getRow(4 + d);
+            const dow = dayNames[d - 1];
+            r.getCell(1).value = d;
+            r.getCell(2).value = dow;
+            r.getCell(3).value = label;
+            r.getCell(4).value = ket.join(" · ");
+            r.getCell(1).alignment = { horizontal: "center" };
+            r.getCell(2).alignment = { horizontal: "center" };
+            r.getCell(2).font = { color: { argb: dow === "Min" || dow === "Sab" ? "FFdc3545" : "FF334155" } };
+            const sc = r.getCell(3);
+            sc.font = { bold: true, color: { argb: fontArgb } };
+            sc.alignment = { horizontal: "center" };
+            if (fillArgb) sc.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillArgb } };
+            [1, 2, 3, 4].forEach((c) => {
+              r.getCell(c).border = { top: { style: "hair" }, bottom: { style: "hair" }, left: { style: "hair" }, right: { style: "hair" } };
+              if (r.getCell(c).font == null) r.getCell(c).font = { size: 10 };
+            });
           }
-          const dataRow = ws.addRow(rowData);
-          dataRow.height = 20;
-          dataRow.eachCell((exCell, colNum) => {
-            const meta = cellMeta[colNum - 1];
-            applyDataCell(exCell, meta?.status, colNum === 1);
-            if (meta?.isLembur && colNum > 1) {
-              exCell.border = {
-                top: { style: "medium", color: { argb: "FF1e88e5" } },
-                bottom: { style: "medium", color: { argb: "FF1e88e5" } },
-                left: { style: "medium", color: { argb: "FF1e88e5" } },
-                right: { style: "medium", color: { argb: "FF1e88e5" } },
-              };
-            }
-          });
+
+          // Baris TOTAL.
+          const totalRow = ws.getRow(5 + daysInMonth);
+          totalRow.getCell(1).value = "TOTAL";
+          totalRow.getCell(1).font = { bold: true };
+          const totalParts = [`${sm.hadir} Hadir`, `${sm.terlambat} Telat`];
+          if (isStrict) totalParts.push(`${sm.tidakLengkap} Tidak Lengkap`);
+          totalParts.push(`${sm.lembur} Lembur`);
+          totalRow.getCell(3).value = totalParts.join(" · ");
+          totalRow.getCell(3).font = { bold: true };
+          ws.mergeCells(5 + daysInMonth, 3, 5 + daysInMonth, 4);
         }
       }
 
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      const catLabel = categoryFilter
-        ? "_" + (categoryOptions.find((c) => String(c.id) === String(categoryFilter))?.name || "kat")
-            .replace(/[^a-zA-Z0-9]+/g, "-")
+      const catLabel = categoryFilter.length
+        ? "_" + (categoryFilter.length === 1
+            ? (categoryOptions.find((c) => String(c.id) === String(categoryFilter[0]))?.name || "kat")
+                .replace(/[^a-zA-Z0-9]+/g, "-")
+            : `${categoryFilter.length}kategori`)
         : "";
-      saveAs(blob, `Rekap_Absensi_${month}_${mode}${catLabel}.xlsx`);
+      saveAs(blob, `Detail_Absen_perOrang_${month}_${mode}${catLabel}.xlsx`);
     } finally {
       setExporting(false);
     }
@@ -284,9 +337,12 @@ const RekapKalender = () => {
             <span className="badge" style={{ background: "#e8f5e9", color: "#2e7d32", fontSize: 12, padding: "6px 12px", borderRadius: 8 }}>
               <i className="mdi mdi-account-group"></i> {totalUser} karyawan
             </span>
-            {categoryFilter && (
+            {categoryFilter.length > 0 && (
               <span className="badge" style={{ background: "#fff3e0", color: "#e65100", fontSize: 12, padding: "6px 12px", borderRadius: 8 }}>
-                <i className="mdi mdi-filter"></i> {categoryOptions.find((c) => String(c.id) === String(categoryFilter))?.name}
+                <i className="mdi mdi-filter"></i>{" "}
+                {categoryFilter.length === 1
+                  ? categoryOptions.find((c) => String(c.id) === String(categoryFilter[0]))?.name
+                  : `${categoryFilter.length} kategori`}
               </span>
             )}
           </div>
@@ -332,20 +388,21 @@ const RekapKalender = () => {
               ))}
             </div>
           </div>
-          {/* Filter kategori */}
-          <div style={{ minWidth: 180 }}>
+          {/* Filter kategori (multi) */}
+          <div style={{ minWidth: 260 }}>
             <label style={{ display: "block", fontSize: 12, color: "#607d8b", fontWeight: 600 }}>Kategori</label>
-            <select
-              className="form-control"
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              style={{ borderRadius: 8 }}
-            >
-              <option value="">Semua Kategori</option>
-              {categoryOptions.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+            <Select
+              isMulti
+              options={categoryOptions.map((c) => ({ value: c.id, label: c.name }))}
+              value={categoryFilter.map((id) => ({
+                value: id,
+                label: categoryOptions.find((c) => String(c.id) === String(id))?.name || id,
+              }))}
+              onChange={(opts) => setCategoryFilter((opts || []).map((o) => o.value))}
+              placeholder="Semua Kategori"
+              closeMenuOnSelect={false}
+              menuPosition="fixed"
+            />
           </div>
           <button className="btn btn-gradient-info btn-sm mb-1" onClick={fetchRekap}>
             Tampilkan
@@ -371,13 +428,12 @@ const RekapKalender = () => {
       {/* Legend */}
       <div className="d-flex gap-3 mb-3 flex-wrap align-items-center">
         {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
-          if (key === "belum") return null;
+          if (key === "belum" || key === "alpha") return null;
           if (key === "tidak_lengkap" && mode !== "strict") return null;
           const labels = {
             hadir: "Hadir",
             terlambat: "Terlambat",
             tidak_lengkap: "Tidak Lengkap",
-            alpha: "Alpha",
             libur: "Libur/Off",
           };
           return (
@@ -421,6 +477,13 @@ const RekapKalender = () => {
                         <div style={{ fontSize: 9, fontWeight: "normal" }}>{dayNames[d - 1]}</div>
                       </th>
                     ))}
+                    {/* Kolom rekap di akhir. Telat & TL = bagian dari Hadir. */}
+                    <th title="Total hari hadir (termasuk telat)" style={{ ...thStyle(44), background: "#e8f5e9", color: "#2e7d32", borderLeft: "2px solid #bbb" }}>Hadir</th>
+                    <th title="Dari hadir, berapa yang telat" style={{ ...thStyle(44), background: "#fff8e1", color: "#ef6c00" }}>› Telat</th>
+                    {mode === "strict" && (
+                      <th title="Dari hadir, berapa yang tidak absen keluar" style={{ ...thStyle(44), background: "#fff3e0", color: "#e65100" }}>› TL</th>
+                    )}
+                    <th title="Lembur (terpisah dari hadir)" style={{ ...thStyle(44), background: "#e3f2fd", color: "#1565c0" }}>Lembur</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -436,7 +499,9 @@ const RekapKalender = () => {
                         const incompleteLate =
                           mode === "strict" && status === "terlambat" &&
                           typeof cell === "object" && cell.complete === false;
-                        const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.belum;
+                        // Tandai hadir/telat/TL/libur saja. Alpha & belum → kosong (blank).
+                        const displayStatus = status === "alpha" ? "belum" : status;
+                        const cfg = STATUS_CONFIG[displayStatus] || STATUS_CONFIG.belum;
                         const dateLabel = `${String(d).padStart(2, "0")}/${String(mon).padStart(2, "0")}/${year}`;
                         const parts = [];
                         if (time) parts.push(`Absen: ${time}`);
@@ -463,7 +528,7 @@ const RekapKalender = () => {
                             }}
                           >
                             <span style={{ color: cfg.color, fontSize: 10, fontWeight: "bold" }}>
-                              {cfg.label}
+                              {displayStatus === "belum" ? "" : cfg.label}
                             </span>
                             {isLembur && (
                               <span
@@ -483,6 +548,24 @@ const RekapKalender = () => {
                           </td>
                         );
                       })}
+                      {(() => {
+                        const sm = summarizeUser(user);
+                        const recapCell = (val, bg, color) => (
+                          <td style={{ ...tdStyle(40), textAlign: "center", background: bg, color, fontWeight: "bold", fontSize: 12 }}>
+                            {val}
+                          </td>
+                        );
+                        return (
+                          <>
+                            <td style={{ ...tdStyle(40), textAlign: "center", background: "#e8f5e9", color: "#2e7d32", fontWeight: "bold", fontSize: 12, borderLeft: "2px solid #bbb" }}>
+                              {sm.hadir}
+                            </td>
+                            {recapCell(sm.terlambat, "#fff8e1", "#ef6c00")}
+                            {mode === "strict" && recapCell(sm.tidakLengkap, "#fff3e0", "#e65100")}
+                            {recapCell(sm.lembur, "#e3f2fd", "#1565c0")}
+                          </>
+                        );
+                      })()}
                     </tr>
                   ))}
                 </tbody>
