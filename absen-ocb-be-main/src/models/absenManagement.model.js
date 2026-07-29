@@ -232,8 +232,19 @@ const getLemburTypes = async (userId) => {
 
   let assignedKategori = null;
   if (isJadwalHarian) {
+    // Kategori shift dari tipe MASUK jadwal. Banyak tipe masuk ber-kategori NULL
+    // (mis. "S2-PAGI 9 JAM" masuk kategori NULL, keluar 'Pagi') → fallback ke
+    // kategori tipe KELUAR pasangan (match by name) supaya komplemen terdefinisi.
     const [jrows] = await dbpool.query(
-      `SELECT tm.kategori_absen
+      `SELECT COALESCE(
+                tm.kategori_absen,
+                (SELECT tk.kategori_absen
+                   FROM tipe_absen tk
+                  WHERE tk.name = tm.name
+                    AND tk.is_deleted = 0
+                    AND (LOWER(tk.description) LIKE '%keluar%' OR LOWER(tk.description) LIKE '%pulang%')
+                  LIMIT 1)
+              ) AS kategori_absen
        FROM jadwal_harian j
        JOIN tipe_absen tm ON tm.absen_id = j.absen_masuk_id
        WHERE j.user_id = ? AND j.tanggal = CURDATE() AND j.is_deleted = 0
