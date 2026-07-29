@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import axios from "axios";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
@@ -42,10 +42,39 @@ const RekapKalender = () => {
   const tooltipTimeout = useRef(null);
   // Mode rekap: "moderat" (hadir = ada masuk) | "strict" (wajib masuk+keluar).
   const [mode, setMode] = useState(() => localStorage.getItem("rekap_mode") || "moderat");
+  // Filter kategori user (id_category, "" = semua).
+  const [categoryFilter, setCategoryFilter] = useState("");
 
   useEffect(() => {
     localStorage.setItem("rekap_mode", mode);
   }, [mode]);
+
+  // Daftar kategori unik dari data (untuk dropdown filter).
+  const categoryOptions = useMemo(() => {
+    const map = new Map();
+    for (const retail of data) {
+      for (const u of retail.users) {
+        if (u.id_category != null && !map.has(u.id_category)) {
+          map.set(u.id_category, u.category_name || `Kategori ${u.id_category}`);
+        }
+      }
+    }
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [data]);
+
+  // Data setelah filter kategori: buang user tak cocok, buang retail kosong.
+  const filteredData = useMemo(() => {
+    if (!categoryFilter) return data;
+    const cid = Number(categoryFilter);
+    return data
+      .map((retail) => ({
+        ...retail,
+        users: retail.users.filter((u) => Number(u.id_category) === cid),
+      }))
+      .filter((retail) => retail.users.length > 0);
+  }, [data, categoryFilter]);
 
   const fetchRekap = async () => {
     setLoading(true);
@@ -114,7 +143,8 @@ const RekapKalender = () => {
   };
 
   const exportExcel = async () => {
-    if (!data.length) return;
+    const exportData = filteredData;
+    if (!exportData.length) return;
     setExporting(true);
     try {
       const wb = new ExcelJS.Workbook();
@@ -147,7 +177,7 @@ const RekapKalender = () => {
       };
 
       let no = 1;
-      for (const retail of data) {
+      for (const retail of exportData) {
         for (const user of retail.users) {
           let hadir = 0, terlambat = 0, tidakLengkap = 0, lembur = 0, alpha = 0, libur = 0;
           for (let d = 1; d <= daysInMonth; d++) {
@@ -182,7 +212,7 @@ const RekapKalender = () => {
       }
 
       // ── Sheet 2+: Detail per retail ──
-      for (const retail of data) {
+      for (const retail of exportData) {
         const ws = wb.addWorksheet(retail.retail_name.slice(0, 31));
         const headerRow = ["Nama Karyawan"];
         for (let d = 1; d <= daysInMonth; d++) {
@@ -230,16 +260,37 @@ const RekapKalender = () => {
 
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      saveAs(blob, `Rekap_Absensi_${month}_${mode}.xlsx`);
+      const catLabel = categoryFilter
+        ? "_" + (categoryOptions.find((c) => String(c.id) === String(categoryFilter))?.name || "kat")
+            .replace(/[^a-zA-Z0-9]+/g, "-")
+        : "";
+      saveAs(blob, `Rekap_Absensi_${month}_${mode}${catLabel}.xlsx`);
     } finally {
       setExporting(false);
     }
   };
 
+  const totalUser = filteredData.reduce((acc, r) => acc + r.users.length, 0);
+
   return (
     <div className="content-wrapper">
-      <div className="page-header">
-        <h3 className="page-title">Rekap Absensi Kalender</h3>
+      <div className="page-header d-flex justify-content-between align-items-center flex-wrap">
+        <h3 className="page-title mb-0">Rekap Absensi Kalender</h3>
+        {!loading && !error && data.length > 0 && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <span className="badge" style={{ background: "#eef4fb", color: "#1a5276", fontSize: 12, padding: "6px 12px", borderRadius: 8 }}>
+              <i className="mdi mdi-store"></i> {filteredData.length} OC/Retail
+            </span>
+            <span className="badge" style={{ background: "#e8f5e9", color: "#2e7d32", fontSize: 12, padding: "6px 12px", borderRadius: 8 }}>
+              <i className="mdi mdi-account-group"></i> {totalUser} karyawan
+            </span>
+            {categoryFilter && (
+              <span className="badge" style={{ background: "#fff3e0", color: "#e65100", fontSize: 12, padding: "6px 12px", borderRadius: 8 }}>
+                <i className="mdi mdi-filter"></i> {categoryOptions.find((c) => String(c.id) === String(categoryFilter))?.name}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="row mb-3">
@@ -281,13 +332,28 @@ const RekapKalender = () => {
               ))}
             </div>
           </div>
+          {/* Filter kategori */}
+          <div style={{ minWidth: 180 }}>
+            <label style={{ display: "block", fontSize: 12, color: "#607d8b", fontWeight: 600 }}>Kategori</label>
+            <select
+              className="form-control"
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              style={{ borderRadius: 8 }}
+            >
+              <option value="">Semua Kategori</option>
+              {categoryOptions.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
           <button className="btn btn-gradient-info btn-sm mb-1" onClick={fetchRekap}>
             Tampilkan
           </button>
           <button
             className="btn btn-success btn-sm mb-1"
             onClick={exportExcel}
-            disabled={exporting || !data.length}
+            disabled={exporting || !filteredData.length}
             style={{ whiteSpace: "nowrap" }}
           >
             {exporting ? "..." : "Export Excel"}
@@ -332,7 +398,7 @@ const RekapKalender = () => {
       {loading && <p>Loading data...</p>}
       {error && <p className="text-danger">Error: {error}</p>}
 
-      {!loading && !error && data.map((retail) => (
+      {!loading && !error && filteredData.map((retail) => (
         <div key={retail.retail_id} className="card mb-4">
           <div className="card-header py-2">
             <h5 className="mb-0 card-title">{retail.retail_name}</h5>
@@ -426,8 +492,12 @@ const RekapKalender = () => {
         </div>
       ))}
 
-      {!loading && !error && data.length === 0 && (
-        <div className="alert alert-warning">Tidak ada data untuk bulan ini.</div>
+      {!loading && !error && filteredData.length === 0 && (
+        <div className="alert alert-warning">
+          {data.length === 0
+            ? "Tidak ada data untuk bulan ini."
+            : "Tidak ada karyawan untuk kategori ini."}
+        </div>
       )}
 
       {tooltip.visible && (
