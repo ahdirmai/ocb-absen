@@ -41,6 +41,13 @@ const dbpool = require("../src/config/database");
 //   --user=<id>         batasi ke satu user.
 //   --since=YYYY-MM-DD  batasi ke sesi broken dgn tanggal >= ini.
 // Tanpa keduanya → script berhenti (tak melakukan apa-apa).
+//
+// SEMUA user sekaligus: pakai --since dgn tanggal sebelum data paling awal.
+//   node scripts/fix-sameday-mispair-sesi.js --since=2026-01-01 --summary  # rollup per-user
+//   APPLY=1 node scripts/fix-sameday-mispair-sesi.js --since=2026-01-01
+//
+// --summary  tampilkan rollup per-user (jumlah broken + rentang tanggal) alih-alih
+//            tabel detail per-sesi. Enak untuk review massal sebelum APPLY.
 // ============================================================================
 
 const argv = process.argv.slice(2);
@@ -51,6 +58,7 @@ const getArg = (name, def) => {
 const APPLY = process.env.APPLY === "1" || argv.includes("--apply");
 const USER_ID = getArg("user", null);
 const SINCE_DATE = getArg("since", null);
+const SUMMARY = argv.includes("--summary"); // ringkas per-user, tanpa tabel detail
 
 const line = (s = "") => console.log(s);
 
@@ -150,13 +158,33 @@ async function resolveJadwal(conn, userId, tanggal, typeIds) {
     );
     stats.broken = broken.length;
     line(`\n[broken] sesi closed same-day beda tanggal: ${broken.length}`);
-    console.table(
-      broken.map((b) => ({
-        sesi_id: b.sesi_id, user: b.username, shift: b.shift_name,
-        masuk: ymd(b.masuk_time) + " " + String(b.masuk_time).slice(11, 16),
-        keluar: ymd(b.keluar_time) + " " + String(b.keluar_time).slice(11, 16),
-      }))
-    );
+    if (SUMMARY) {
+      // Rollup per-user: jumlah sesi broken + rentang tanggal. Enak utk review massal.
+      const perUser = new Map();
+      for (const b of broken) {
+        const k = `${b.user_id}|${b.username || ""}`;
+        if (!perUser.has(k)) perUser.set(k, { user_id: b.user_id, user: b.username, broken: 0, min: null, max: null });
+        const u = perUser.get(k);
+        u.broken++;
+        const d = ymd(b.masuk_time);
+        if (!u.min || d < u.min) u.min = d;
+        if (!u.max || d > u.max) u.max = d;
+      }
+      console.table(
+        [...perUser.values()]
+          .sort((a, b) => b.broken - a.broken)
+          .map((u) => ({ user_id: u.user_id, user: u.user, broken: u.broken, dari: u.min, sampai: u.max }))
+      );
+      line(`[summary] ${perUser.size} user terdampak, ${broken.length} sesi broken.`);
+    } else {
+      console.table(
+        broken.map((b) => ({
+          sesi_id: b.sesi_id, user: b.username, shift: b.shift_name,
+          masuk: ymd(b.masuk_time) + " " + String(b.masuk_time).slice(11, 16),
+          keluar: ymd(b.keluar_time) + " " + String(b.keluar_time).slice(11, 16),
+        }))
+      );
+    }
     if (broken.length === 0) {
       line("[done] tak ada sesi broken dalam scope.");
       conn.release();
@@ -208,15 +236,17 @@ async function resolveJadwal(conn, userId, tanggal, typeIds) {
     stats.rebuiltIncomplete = plan.filter((p) => p.type === "incomplete").length;
 
     line(`\n[plan] rebuild → closed: ${stats.rebuiltClosed}, incomplete: ${stats.rebuiltIncomplete}`);
-    console.table(
-      plan.map((p) => ({
-        tgl: p.g.tanggal,
-        user: p.g.user_id,
-        status: p.type,
-        masuk: p.masuk ? String(p.masuk.absen_time).slice(0, 16) : "—",
-        keluar: p.keluar ? String(p.keluar.absen_time).slice(0, 16) : "—",
-      }))
-    );
+    if (!SUMMARY) {
+      console.table(
+        plan.map((p) => ({
+          tgl: p.g.tanggal,
+          user: p.g.user_id,
+          status: p.type,
+          masuk: p.masuk ? String(p.masuk.absen_time).slice(0, 16) : "—",
+          keluar: p.keluar ? String(p.keluar.absen_time).slice(0, 16) : "—",
+        }))
+      );
+    }
 
     if (!APPLY) {
       line("\n[DRY-RUN] tidak ada perubahan. Set APPLY=1 untuk commit.");
