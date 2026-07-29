@@ -1,5 +1,18 @@
 const dbpool = require("../config/database");
 
+// Normalisasi nilai DATE/DATETIME jadi 'YYYY-MM-DD'. mysql2 (pool tanpa
+// dateStrings) mengembalikan kolom DATE/DATETIME sebagai objek Date, sehingga
+// String(date).slice(0,10) menghasilkan 'Thu Jul 09' (invalid utk kolom DATE).
+// Ambil komponen lokal (Date sudah di-parse ke TZ lokal sesuai nilai tersimpan).
+const toYMD = (value) => {
+  if (value == null) return null;
+  if (value instanceof Date) {
+    const p = (n) => String(n).padStart(2, "0");
+    return `${value.getFullYear()}-${p(value.getMonth() + 1)}-${p(value.getDate())}`;
+  }
+  return String(value).slice(0, 10);
+};
+
 // Model absensi_sesi: pairing absen masuk <-> keluar jadi 1 kesatuan kerja.
 // Fungsi open/close/find menerima `conn` (koneksi transaksi) agar atomic dgn
 // insert absensi. resolveJadwalId dipakai saat masuk untuk link ke jadwal_harian.
@@ -388,6 +401,14 @@ const findMatchCandidates = async (sesiId) => {
   const anchorTime = sesi.masuk_time || sesi.keluar_time;
   // Orphan ini butuh pasangan arah berlawanan.
   const needDir = isKeluarOrphan ? "masuk" : "keluar";
+  // Window terarah (bukan ABS): kandidat harus di sisi waktu yang benar.
+  //  - butuh MASUK (orphan keluar)  → masuk pasangan < keluar anchor (0..20 jam sebelum)
+  //  - butuh KELUAR (orphan masuk)  → keluar pasangan > masuk anchor (0..20 jam sesudah)
+  // Cegah pasangan arah-waktu terbalik (keluar sebelum masuk) muncul + terangking.
+  const timeCond =
+    needDir === "masuk"
+      ? "a.absen_time < ? AND TIMESTAMPDIFF(HOUR, a.absen_time, ?) <= 20"
+      : "a.absen_time > ? AND TIMESTAMPDIFF(HOUR, ?, a.absen_time) <= 20";
   const [rows] = await dbpool.query(
     `SELECT s.sesi_id, s.tanggal, s.status, s.masuk_absensi_id, s.keluar_absensi_id,
             a.absen_time AS pair_time, t.name AS shift_name, t.description AS pair_desc
@@ -397,10 +418,10 @@ const findMatchCandidates = async (sesiId) => {
       WHERE s.status = 'incomplete' AND s.user_id = ? AND s.sesi_id <> ?
         AND s.is_lembur = ? AND t.name = ?
         AND ${needDir === "masuk" ? "s.keluar_absensi_id IS NULL" : "s.masuk_absensi_id IS NULL"}
-        AND ABS(TIMESTAMPDIFF(HOUR, ?, a.absen_time)) <= 20
+        AND ${timeCond}
       ORDER BY ABS(TIMESTAMPDIFF(MINUTE, ?, a.absen_time)) ASC
       LIMIT 20`,
-    [sesi.user_id, sesiId, sesi.is_lembur, shiftName, anchorTime, anchorTime]
+    [sesi.user_id, sesiId, sesi.is_lembur, shiftName, anchorTime, anchorTime, anchorTime]
   );
   return { sesi, candidates: rows, needDir };
 };
@@ -419,6 +440,18 @@ const matchSesi = async (conn, masukSesiId, keluarSesiId, updatedAt = null) => {
     throw new Error("Sesi masuk harus punya absen masuk tanpa keluar.");
   if (!(keluar.keluar_absensi_id != null && keluar.masuk_absensi_id == null))
     throw new Error("Sesi keluar harus punya absen keluar tanpa masuk.");
+  // Guard is_lembur sama — cegah pasangkan masuk regular dgn keluar lembur (atau
+  // sebaliknya). Mutasi = source of truth; jangan andalkan filter FE saja.
+  if (Number(masuk.is_lembur || 0) !== Number(keluar.is_lembur || 0))
+    throw new Error("Sesi masuk & keluar harus sama-sama lembur atau sama-sama regular.");
+  // Guard kronologi — absen keluar harus SETELAH absen masuk. Cegah sesi closed
+  // berdurasi negatif (racun rekap/fee). keluar_time & masuk_time = DATETIME.
+  if (masuk.masuk_time != null && keluar.keluar_time != null) {
+    const masukMs = new Date(masuk.masuk_time).getTime();
+    const keluarMs = new Date(keluar.keluar_time).getTime();
+    if (keluarMs <= masukMs)
+      throw new Error("Waktu absen keluar harus setelah waktu absen masuk.");
+  }
 
   await conn.query(
     `UPDATE absensi_sesi
@@ -438,9 +471,7 @@ const unmatchSesi = async (conn, sesiId, updatedAt = null) => {
   if (sesi.status !== "closed" || sesi.masuk_absensi_id == null || sesi.keluar_absensi_id == null)
     throw new Error("Hanya sesi closed dengan masuk+keluar yang bisa di-unmatch.");
 
-  const keluarTanggal = sesi.keluar_time
-    ? String(sesi.keluar_time).slice(0, 10)
-    : sesi.tanggal;
+  const keluarTanggal = toYMD(sesi.keluar_time) || toYMD(sesi.tanggal);
   const newKeluarSesiId = await createIncompleteSesi(conn, {
     user_id: sesi.user_id,
     tanggal: keluarTanggal,
