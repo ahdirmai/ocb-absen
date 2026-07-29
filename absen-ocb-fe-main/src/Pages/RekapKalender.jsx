@@ -3,8 +3,10 @@ import axios from "axios";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import Select from "react-select";
+import { format } from "date-fns";
 
 const VITE_API_URL = import.meta.env.VITE_API_URL;
+const VITE_API_IMAGE = import.meta.env.VITE_API_IMAGE;
 
 const STATUS_CONFIG = {
   hadir:         { bg: "#28a745", color: "#fff", label: "H", excelBg: "FF28a745" },
@@ -45,6 +47,9 @@ const RekapKalender = () => {
   const [mode, setMode] = useState(() => localStorage.getItem("rekap_mode") || "moderat");
   // Filter kategori user (array id_category, kosong = semua).
   const [categoryFilter, setCategoryFilter] = useState([]);
+  // Modal detail absen per hari.
+  const [detail, setDetail] = useState(null); // { user, retail, dateStr, dateLabel, rows, loading }
+  const [previewImg, setPreviewImg] = useState(null);
 
   useEffect(() => {
     localStorage.setItem("rekap_mode", mode);
@@ -124,6 +129,29 @@ const RekapKalender = () => {
       if (typeof cell === "object" && cell.lembur === true) lembur++;
     }
     return { hadir, terlambat, tidakLengkap, lembur };
+  };
+
+  // Klik sel → buka modal detail absen hari itu (fetch history user 1 hari).
+  const openDetail = async (user, retail, d) => {
+    const dateStr = `${year}-${String(mon).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const dateLabel = `${String(d).padStart(2, "0")}/${String(mon).padStart(2, "0")}/${year}`;
+    setDetail({ user, retail, dateStr, dateLabel, rows: [], loading: true });
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.post(
+        `${VITE_API_URL}/absensi/history-user/${user.user_id}`,
+        { start_date: dateStr, end_date: dateStr },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const rows = (res.data.data || []).sort(
+        (a, b) => new Date(a.absen_time).getTime() - new Date(b.absen_time).getTime()
+      );
+      setDetail((prev) => (prev ? { ...prev, rows, loading: false } : prev));
+    } catch (err) {
+      setDetail((prev) =>
+        prev ? { ...prev, rows: [], loading: false, error: err.response?.data?.message || err.message } : prev
+      );
+    }
   };
 
   const showTooltip = (e, text) => {
@@ -513,16 +541,19 @@ const RekapKalender = () => {
                         if (incompleteLate) parts.push("Telat + tidak absen keluar");
                         if (isLembur) parts.push("Lembur (masuk 2x / flag lembur)");
                         const tooltipText = parts.join(" • ");
+                        // Klik hanya bila ada absen (hadir/telat/TL) di hari itu.
+                        const clickable = ["hadir", "terlambat", "tidak_lengkap"].includes(status);
                         return (
                           <td
                             key={d}
                             onMouseMove={(e) => tooltipText && showTooltip(e, tooltipText)}
                             onMouseLeave={hideTooltip}
+                            onClick={() => clickable && openDetail(user, retail, d)}
                             style={{
                               ...tdStyle(28),
                               background: cfg.bg,
                               textAlign: "center",
-                              cursor: "default",
+                              cursor: clickable ? "pointer" : "default",
                               position: "relative",
                               boxShadow: incompleteLate ? `inset 0 0 0 2px ${INCOMPLETE_BORDER}` : undefined,
                             }}
@@ -599,6 +630,126 @@ const RekapKalender = () => {
           boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
         }}>
           {tooltip.text}
+        </div>
+      )}
+
+      {/* Modal detail absen per hari */}
+      {detail && (
+        <div
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+            display: "flex", justifyContent: "center", alignItems: "center", zIndex: 1050,
+          }}
+          onClick={() => setDetail(null)}
+        >
+          <div
+            style={{
+              background: "#fff", borderRadius: 14, width: 520, maxWidth: "94%",
+              maxHeight: "90vh", overflowY: "auto", padding: 20,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <div>
+                <h5 style={{ margin: 0, fontWeight: 700, color: "#263238" }}>
+                  <i className="mdi mdi-calendar-clock" style={{ color: "#2471a3", marginRight: 6 }}></i>
+                  Detail Absen
+                </h5>
+                <div style={{ fontSize: 12, color: "#90a4ae" }}>
+                  {detail.user.name} · {detail.retail.retail_name} · {detail.dateLabel}
+                </div>
+              </div>
+              <button
+                onClick={() => setDetail(null)}
+                style={{ border: "none", background: "transparent", fontSize: 22, color: "#b0bec5", cursor: "pointer", lineHeight: 1 }}
+              >
+                &times;
+              </button>
+            </div>
+
+            {detail.loading ? (
+              <div style={{ textAlign: "center", padding: 30, color: "#90a4ae" }}>
+                <i className="mdi mdi-loading mdi-spin" style={{ fontSize: 26 }}></i>
+                <p style={{ marginTop: 8 }}>Memuat...</p>
+              </div>
+            ) : detail.error ? (
+              <div className="alert alert-danger">{detail.error}</div>
+            ) : detail.rows.length === 0 ? (
+              <div className="alert alert-warning">Tidak ada catatan absen pada tanggal ini.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {detail.rows.map((row) => {
+                  const dir = row.sesi_direction ||
+                    (String(row.description || "").toLowerCase().includes("keluar") ||
+                     String(row.description || "").toLowerCase().includes("pulang") ? "keluar" : "masuk");
+                  const isKeluar = dir === "keluar";
+                  const telat = Number(row.status_absen) === 2;
+                  const photo = row.photo_url ? `${VITE_API_IMAGE}${row.photo_url}` : null;
+                  const isVid = photo && (photo.endsWith(".mp4") || photo.endsWith(".webm"));
+                  return (
+                    <div
+                      key={row.absensi_id}
+                      style={{
+                        display: "flex", gap: 12, alignItems: "center",
+                        border: "1px solid #eceff1", borderRadius: 12, padding: 12,
+                        borderLeft: `4px solid ${isKeluar ? "#e53935" : "#43a047"}`,
+                      }}
+                    >
+                      {photo ? (
+                        isVid ? (
+                          <video src={photo} onClick={() => setPreviewImg(photo)}
+                            style={{ width: 54, height: 54, borderRadius: 10, objectFit: "cover", cursor: "pointer", flexShrink: 0 }} />
+                        ) : (
+                          <img src={photo} alt="absen" onClick={() => setPreviewImg(photo)}
+                            style={{ width: 54, height: 54, borderRadius: 10, objectFit: "cover", cursor: "pointer", flexShrink: 0 }} />
+                        )
+                      ) : (
+                        <div style={{ width: 54, height: 54, borderRadius: 10, background: "#f4f6f8", display: "flex", alignItems: "center", justifyContent: "center", color: "#b0bec5", flexShrink: 0 }}>
+                          <i className="mdi mdi-image-off" style={{ fontSize: 22 }}></i>
+                        </div>
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                          <span style={{
+                            fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999,
+                            background: isKeluar ? "#ffebee" : "#e8f5e9", color: isKeluar ? "#c62828" : "#2e7d32",
+                          }}>
+                            {isKeluar ? "Keluar" : "Masuk"}
+                          </span>
+                          {telat && <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999, background: "#fff8e1", color: "#ef6c00" }}>Telat</span>}
+                          {(row.is_lembur === 1 || row.is_lembur === "1") && <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999, background: "#e3f2fd", color: "#1565c0" }}>Lembur</span>}
+                          {Number(row.is_valid) !== 1 && <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999, background: "#ffebee", color: "#c62828" }}>Invalid</span>}
+                        </div>
+                        <div style={{ fontWeight: 600, color: "#37474f", fontSize: 14, marginTop: 3 }}>
+                          {row.absen_time ? format(new Date(row.absen_time), "HH:mm:ss") : "-"}
+                          <span style={{ fontSize: 12, color: "#90a4ae", fontWeight: 400 }}> · {row.category_absen || row.description}</span>
+                        </div>
+                        {row.reason && (
+                          <div style={{ fontSize: 12, color: "#607d8b", marginTop: 2 }}>
+                            <i className="mdi mdi-note-text-outline"></i> {row.reason}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Preview foto/video full */}
+      {previewImg && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", justifyContent: "center", alignItems: "center", zIndex: 1100 }}
+          onClick={() => setPreviewImg(null)}
+        >
+          {previewImg.endsWith(".mp4") || previewImg.endsWith(".webm") ? (
+            <video src={previewImg} controls style={{ maxWidth: "90%", maxHeight: "90%", borderRadius: 10 }} onClick={(e) => e.stopPropagation()} />
+          ) : (
+            <img src={previewImg} alt="preview" style={{ maxWidth: "90%", maxHeight: "90%", borderRadius: 10 }} onClick={(e) => e.stopPropagation()} />
+          )}
         </div>
       )}
     </div>
