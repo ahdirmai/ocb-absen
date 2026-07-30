@@ -69,6 +69,81 @@ export const StatusModal = ({ statusModal, setStatusModal, saving, onClose, onSu
   </Modal>
 );
 
+// ── Konversi sesi Regular <-> Lembur (+ opsional ganti tipe shift) ──
+export const LemburModal = ({ lembur, setLembur, loadingTipe, saving, onClose, onToggle, onSubmit }) => {
+  const sesi = lembur.sesi;
+  const tipeOpt = (opts) => [
+    { key: "", label: "— tetap (tak ganti tipe) —" },
+    ...opts.map((t) => ({ key: String(t.absen_id), label: `${t.name} (${t.description})` })),
+  ];
+  return (
+    <Modal onClose={onClose} width={460}>
+      <h5 style={{ marginTop: 0 }}>Konversi Lembur — Sesi #{sesi.sesi_id}</h5>
+      <p style={{ fontSize: 13, color: "#666", margin: "0 0 12px" }}>
+        {sesi.nama_karyawan} — {sesi.shift_name || sesi.kategori_absen || "-"} ·{" "}
+        <b>{sesi.is_lembur === 1 ? "Lembur" : "Regular"}</b> saat ini
+      </p>
+
+      <label style={{ fontWeight: 600, fontSize: 13 }}>Ubah ke</label>
+      <select
+        className="form-control"
+        value={String(lembur.is_lembur)}
+        onChange={(e) => onToggle(Number(e.target.value))}
+        style={{ marginBottom: 12 }}
+      >
+        <option value="0">Regular</option>
+        <option value="1">Lembur</option>
+      </select>
+
+      <p style={{ fontSize: 12, color: "#888", margin: "0 0 10px" }}>
+        Ganti tipe shift opsional. Bila diganti, fee mengikuti tipe baru + status
+        di-hitung ulang. Kosongkan untuk pertahankan tipe & fee.
+      </p>
+
+      {loadingTipe ? (
+        <p style={{ color: "#90a4ae" }}>Memuat tipe...</p>
+      ) : (
+        <>
+          {sesi.masuk_absensi_id != null && (
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontWeight: 600, fontSize: 13 }}>
+                Tipe absen MASUK ({fmtTime(sesi.masuk_time)})
+              </label>
+              <select
+                className="form-control"
+                value={lembur.masuk_absen_type_id}
+                onChange={(e) => setLembur({ ...lembur, masuk_absen_type_id: e.target.value })}
+              >
+                {tipeOpt(lembur.masukOpts).map((o) => (
+                  <option key={o.key} value={o.key}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {sesi.keluar_absensi_id != null && (
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontWeight: 600, fontSize: 13 }}>
+                Tipe absen KELUAR ({fmtTime(sesi.keluar_time)})
+              </label>
+              <select
+                className="form-control"
+                value={lembur.keluar_absen_type_id}
+                onChange={(e) => setLembur({ ...lembur, keluar_absen_type_id: e.target.value })}
+              >
+                {tipeOpt(lembur.keluarOpts).map((o) => (
+                  <option key={o.key} value={o.key}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </>
+      )}
+
+      <ModalActions onCancel={onClose} onConfirm={onSubmit} confirmLabel="Konversi" saving={saving} />
+    </Modal>
+  );
+};
+
 // ── Tambah absen bagian hilang (masuk/keluar) pada sesi incomplete ──
 export const AddAbsenModal = ({ add, setAdd, saving, onClose, onSubmit }) => (
   <Modal onClose={onClose} width={420}>

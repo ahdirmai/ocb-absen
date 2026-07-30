@@ -3,7 +3,7 @@ import { fmtTime } from "./helpers";
 import { statusPill, iconBtn } from "./ui";
 
 // Bangun kolom DataTable. Handler aksi di-inject dari container.
-export const buildColumns = ({ onMatch, onAdd, onUnmatch, onEditStatus, onDelete }) => [
+export const buildColumns = ({ onMatch, onAdd, onUnmatch, onEditStatus, onEditLembur, onDelete }) => [
   {
     name: "Tanggal",
     sortable: true,
@@ -95,6 +95,12 @@ export const buildColumns = ({ onMatch, onAdd, onUnmatch, onEditStatus, onDelete
         {row.status === "closed" &&
           iconBtn("#f57c00", "Unmatch (pisah)", () => onUnmatch(row), "mdi-link-variant-off")}
         {iconBtn("#1e88e5", "Ubah status", () => onEditStatus(row), "mdi-pencil")}
+        {iconBtn(
+          "#ef6c00",
+          row.is_lembur === 1 ? "Ubah ke Regular" : "Ubah ke Lembur",
+          () => onEditLembur(row),
+          "mdi-swap-horizontal"
+        )}
         {iconBtn("#c62828", "Hapus sesi", () => onDelete(row), "mdi-delete")}
       </div>
     ),

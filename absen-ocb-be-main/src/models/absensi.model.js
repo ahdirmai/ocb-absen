@@ -196,6 +196,53 @@ const koreksiAbsen = async (conn, absenId, fields, adminId, oldRow) => {
     return result;
 }
 
+// Update is_lembur + opsional tipe/status/potongan pada 1 baris absensi.
+// Dipakai konversi sesi regular<->lembur (admin). is_lembur wajib; absen_type_id,
+// status_absen, potongan opsional (di-set hanya bila tipe berganti). SET dinamis
+// agar tak menimpa kolom yang tak diubah. Audit old->new ke log_activity.
+const updateAbsensiLemburType = async (conn, absenId, fields, adminId, oldRow) => {
+    const { is_lembur, absen_type_id, status_absen, potongan, updated_at } = fields;
+
+    const sets = ['is_lembur = ?', 'updated_by = ?', 'updated_at = ?'];
+    const values = [is_lembur ? 1 : 0, adminId, updated_at];
+
+    if (absen_type_id !== undefined && absen_type_id !== null) {
+        sets.push('absen_type_id = ?');
+        values.push(absen_type_id);
+    }
+    if (status_absen !== undefined && status_absen !== null) {
+        sets.push('status_absen = ?');
+        values.push(status_absen);
+    }
+    if (potongan !== undefined && potongan !== null) {
+        sets.push('potongan = ?');
+        values.push(potongan);
+    }
+    values.push(absenId);
+
+    const [result] = await conn.query(
+        `UPDATE absensi SET ${sets.join(', ')} WHERE absensi_id = ?`,
+        values
+    );
+
+    const ringkas = JSON.stringify({
+        absensi_id: Number(absenId),
+        old: {
+            is_lembur: oldRow?.is_lembur,
+            absen_type_id: oldRow?.absen_type_id,
+            status_absen: oldRow?.status_absen,
+            potongan: oldRow?.potongan,
+        },
+        new: { is_lembur: is_lembur ? 1 : 0, absen_type_id, status_absen, potongan },
+    });
+    await conn.query(
+        `INSERT INTO log_activity (table_name, action, dataquery, user_id) VALUES (?, ?, ?, ?)`,
+        ['absensi', 'UPDATE', ringkas, adminId]
+    );
+
+    return result;
+}
+
 
 
 // const getTimeDB = async (absen_id, retail_id, time) => {
@@ -667,6 +714,7 @@ module.exports={
     validasiAbsen,
     getAbsensiById,
     koreksiAbsen,
+    updateAbsensiLemburType,
     deleteAbsensi,
     getPotonganLate,
     cekAbesensiToday,

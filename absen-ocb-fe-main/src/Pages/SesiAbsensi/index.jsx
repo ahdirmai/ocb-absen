@@ -5,7 +5,7 @@ import Swal from "sweetalert2";
 import { format } from "date-fns";
 import { toYMD, deriveRange, authHeaders } from "./helpers";
 import { buildColumns } from "./columns";
-import { MatchModal, StatusModal, AddAbsenModal, CreateSesiModal } from "./modals";
+import { MatchModal, StatusModal, AddAbsenModal, CreateSesiModal, LemburModal } from "./modals";
 
 const VITE_API_URL = import.meta.env.VITE_API_URL;
 
@@ -33,6 +33,8 @@ const SesiAbsensi = () => {
   const [statusModal, setStatusModal] = useState(null); // { sesi_id, status }
   const [addModal, setAddModal] = useState(null); // { sesi, direction, absen_time_local, status_absen, reason }
   const [createModal, setCreateModal] = useState(null); // { user_id, retail_id, absen_type_id, ... }
+  const [lemburModal, setLemburModal] = useState(null); // { sesi, is_lembur, masuk/keluar_absen_type_id, masukOpts, keluarOpts }
+  const [loadingLemburTipe, setLoadingLemburTipe] = useState(false);
 
   // Picker data (modal buat sesi)
   const [userOptions, setUserOptions] = useState([]);
@@ -164,6 +166,95 @@ const SesiAbsensi = () => {
       );
       Swal.fire("Berhasil!", res.data?.message || "Status diperbarui.", "success");
       setStatusModal(null);
+      fetchSesi();
+    } catch (error) {
+      showErr(error);
+    } finally {
+      setSavingAction(false);
+    }
+  };
+
+  // ── Konversi Regular <-> Lembur ──
+  // Ambil daftar tipe (masuk+keluar) sesuai target is_lembur untuk dropdown ganti shift.
+  const fetchTipeByDir = async (userId, isLembur) => {
+    if (!userId) return { masuk: [], keluar: [] };
+    const res = isLembur
+      ? await axios.get(`${VITE_API_URL}/absen-management/lembur-types/${userId}`, {
+          headers: authHeaders(),
+        })
+      : await axios.post(
+          `${VITE_API_URL}/absen-management/shift-user/${userId}`,
+          {},
+          { headers: authHeaders() }
+        );
+    const all = Array.isArray(res.data?.data) ? res.data.data : [];
+    const pick = (dirWord) => {
+      const seen = new Set();
+      return all.filter((t) => {
+        const d = String(t.description || "").toLowerCase();
+        const isDir = dirWord === "keluar"
+          ? d.includes("keluar") || d.includes("pulang")
+          : d.includes("masuk");
+        if (!isDir || seen.has(t.absen_id)) return false;
+        seen.add(t.absen_id);
+        return true;
+      });
+    };
+    return { masuk: pick("masuk"), keluar: pick("keluar") };
+  };
+
+  const openLemburModal = async (row) => {
+    const target = row.is_lembur === 1 ? 0 : 1; // default: kebalikan status sekarang
+    setLemburModal({
+      sesi: row,
+      is_lembur: target,
+      masuk_absen_type_id: "",
+      keluar_absen_type_id: "",
+      masukOpts: [],
+      keluarOpts: [],
+    });
+    setLoadingLemburTipe(true);
+    try {
+      const { masuk, keluar } = await fetchTipeByDir(row.user_id, target === 1);
+      setLemburModal((prev) => (prev ? { ...prev, masukOpts: masuk, keluarOpts: keluar } : prev));
+    } catch (error) {
+      showErr(error);
+    } finally {
+      setLoadingLemburTipe(false);
+    }
+  };
+
+  // Ganti target regular/lembur → refresh daftar tipe + reset pilihan tipe.
+  const onLemburToggle = async (isLembur) => {
+    setLemburModal((prev) =>
+      prev ? { ...prev, is_lembur: isLembur, masuk_absen_type_id: "", keluar_absen_type_id: "", masukOpts: [], keluarOpts: [] } : prev
+    );
+    setLoadingLemburTipe(true);
+    try {
+      const uid = lemburModal?.sesi?.user_id;
+      const { masuk, keluar } = await fetchTipeByDir(uid, isLembur === 1);
+      setLemburModal((prev) => (prev ? { ...prev, masukOpts: masuk, keluarOpts: keluar } : prev));
+    } catch (error) {
+      showErr(error);
+    } finally {
+      setLoadingLemburTipe(false);
+    }
+  };
+
+  const submitLembur = async () => {
+    if (!lemburModal) return;
+    setSavingAction(true);
+    try {
+      const payload = { is_lembur: lemburModal.is_lembur };
+      if (lemburModal.masuk_absen_type_id) payload.masuk_absen_type_id = Number(lemburModal.masuk_absen_type_id);
+      if (lemburModal.keluar_absen_type_id) payload.keluar_absen_type_id = Number(lemburModal.keluar_absen_type_id);
+      const res = await axios.post(
+        `${VITE_API_URL}/absensi/sesi/${lemburModal.sesi.sesi_id}/lembur`,
+        payload,
+        { headers: authHeaders() }
+      );
+      Swal.fire("Berhasil!", res.data?.message || "Sesi dikonversi.", "success");
+      setLemburModal(null);
       fetchSesi();
     } catch (error) {
       showErr(error);
@@ -349,6 +440,7 @@ const SesiAbsensi = () => {
     onAdd: openAddModal,
     onUnmatch: handleUnmatch,
     onEditStatus: (row) => setStatusModal({ sesi_id: row.sesi_id, status: row.status }),
+    onEditLembur: openLemburModal,
     onDelete: handleDelete,
   });
 
@@ -472,6 +564,18 @@ const SesiAbsensi = () => {
           saving={savingAction}
           onClose={() => setAddModal(null)}
           onSubmit={submitAdd}
+        />
+      )}
+
+      {lemburModal && (
+        <LemburModal
+          lembur={lemburModal}
+          setLembur={setLemburModal}
+          loadingTipe={loadingLemburTipe}
+          saving={savingAction}
+          onClose={() => setLemburModal(null)}
+          onToggle={onLemburToggle}
+          onSubmit={submitLembur}
         />
       )}
 

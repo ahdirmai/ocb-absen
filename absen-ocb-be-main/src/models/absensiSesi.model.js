@@ -221,6 +221,17 @@ const updateSesiKategori = async (conn, sesiId, kategori, updatedAt = null) => {
   return result;
 };
 
+// Update is_lembur sesi (konversi regular<->lembur oleh admin). Wajib sinkron
+// dgn is_lembur kedua row absensi (masuk+keluar) — else guard matchSesi/pairing
+// (findOpenSesi filter is_lembur) jadi tak konsisten.
+const updateSesiLembur = async (conn, sesiId, isLembur, updatedAt = null) => {
+  const [result] = await conn.query(
+    `UPDATE absensi_sesi SET is_lembur = ?, updated_at = ? WHERE sesi_id = ?`,
+    [isLembur ? 1 : 0, updatedAt, sesiId]
+  );
+  return result;
+};
+
 // Tutup sesi (absen keluar). Set keluar + status='closed'.
 const closeSesi = async (conn, sesiId, keluarAbsensiId, updatedAt = null) => {
   const [result] = await conn.query(
@@ -557,6 +568,7 @@ module.exports = {
   findSesiByAbsensiId,
   updateSesiTanggal,
   updateSesiKategori,
+  updateSesiLembur,
   closeSesi,
   createIncompleteSesi,
   getTodaySesiSummary,

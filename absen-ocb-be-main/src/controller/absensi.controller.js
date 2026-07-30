@@ -242,35 +242,49 @@ const createAbsensi = async (req, res) => {
         includeYesterday: isEarlyMorningKeluar,
       });
 
-      if (openSesiAktif) {
-        let cocok = true;
-        if (openSesiAktif.jadwal_id != null) {
-          // Jalur jadwal harian: tipe keluar harus == absen_keluar_id jadwalnya.
-          const jadwalKeluarId = await sesiModel.getJadwalKeluarId(
-            openSesiAktif.jadwal_id
-          );
-          cocok =
-            jadwalKeluarId != null &&
-            String(jadwalKeluarId) === String(body.absen_type_id);
-        } else {
-          // Jalur non-jadwal / lembur: kategori keluar harus == kategori sesi open.
-          // Case-insensitive: kategori tipe bisa beda casing (mis. 'sore'/'Sore').
-          cocok =
-            String(getTimeDB.kategori_absen || "").trim().toLowerCase() ===
-            String(openSesiAktif.kategori_absen || "").trim().toLowerCase();
-        }
+      // Keluar wajib punya sesi masuk OPEN belum-dipasangkan. findAnyOpenSesi +
+      // includeYesterday menangkap cross-date sah (masuk kemarin, keluar dini
+      // hari) → SUBUH/SORE 9 JAM tetap boleh keluar. Tanpa sesi open = orphan
+      // (mis. shift sudah closed tadi lalu keluar lagi dari APK) → tolak. Guard
+      // COUNT di atas dobel proteksi tapi lemah (hitung masuk closed juga).
+      if (!openSesiAktif) {
+        removeUploadedImage(file.filename);
 
-        if (!cocok) {
-          removeUploadedImage(file.filename);
+        return res.status(400).json({
+          message:
+            "Tidak bisa absen keluar: tidak ada absen masuk yang belum diselesaikan.",
+          status: "failed",
+          status_code: "400",
+        });
+      }
 
-          return res.status(400).json({
-            message: `Tipe absen keluar tidak cocok dengan absen masuk Anda (shift ${
-              openSesiAktif.kategori_absen || "-"
-            }). Pilih tipe keluar yang sesuai.`,
-            status: "failed",
-            status_code: "400",
-          });
-        }
+      let cocok = true;
+      if (openSesiAktif.jadwal_id != null) {
+        // Jalur jadwal harian: tipe keluar harus == absen_keluar_id jadwalnya.
+        const jadwalKeluarId = await sesiModel.getJadwalKeluarId(
+          openSesiAktif.jadwal_id
+        );
+        cocok =
+          jadwalKeluarId != null &&
+          String(jadwalKeluarId) === String(body.absen_type_id);
+      } else {
+        // Jalur non-jadwal / lembur: kategori keluar harus == kategori sesi open.
+        // Case-insensitive: kategori tipe bisa beda casing (mis. 'sore'/'Sore').
+        cocok =
+          String(getTimeDB.kategori_absen || "").trim().toLowerCase() ===
+          String(openSesiAktif.kategori_absen || "").trim().toLowerCase();
+      }
+
+      if (!cocok) {
+        removeUploadedImage(file.filename);
+
+        return res.status(400).json({
+          message: `Tipe absen keluar tidak cocok dengan absen masuk Anda (shift ${
+            openSesiAktif.kategori_absen || "-"
+          }). Pilih tipe keluar yang sesuai.`,
+          status: "failed",
+          status_code: "400",
+        });
       }
     }
 
@@ -1043,6 +1057,203 @@ const koreksiAbsen = async (req, res) => {
   }
 };
 
+// POST /api/absensi/sesi/:sesiId/lembur — konversi sesi Regular <-> Lembur (admin).
+// Set is_lembur target (0/1) pada sesi + KEDUA row absensi (masuk & keluar) agar
+// sinkron (guard matchSesi/findOpenSesi filter is_lembur). Opsional ganti tipe
+// absen masuk/keluar ke shift lain → fee ikut tipe baru (tipe_absen.fee via
+// absen_type_id), status_absen + potongan di-recompute (pola koreksiAbsen).
+// Arah tipe tak boleh berubah (masuk tetap masuk, keluar tetap keluar). Atomic.
+const konversiLemburSesi = async (req, res) => {
+  const { sesiId } = req.params;
+  const adminId = req.user?.id;
+  const { is_lembur, masuk_absen_type_id, keluar_absen_type_id } = req.body;
+
+  if (is_lembur === undefined || is_lembur === null) {
+    return res.status(400).json({
+      message: "Field is_lembur (0/1) wajib diisi.",
+      status: "failed",
+      status_code: "400",
+    });
+  }
+  const targetLembur = Number(is_lembur) === 1 ? 1 : 0;
+
+  try {
+    const sesi = await sesiModel.getSesiById(sesiId);
+    if (!sesi) {
+      return res.status(404).json({
+        message: "Sesi tidak ditemukan.",
+        status: "failed",
+        status_code: "404",
+      });
+    }
+
+    // Slot yang akan dikonversi: (row absensi, arah, tipe baru bila diminta).
+    const slots = [];
+    if (sesi.masuk_absensi_id != null) {
+      slots.push({ absensiId: sesi.masuk_absensi_id, dir: "masuk", newTypeInput: masuk_absen_type_id });
+    }
+    if (sesi.keluar_absensi_id != null) {
+      slots.push({ absensiId: sesi.keluar_absensi_id, dir: "keluar", newTypeInput: keluar_absen_type_id });
+    }
+    if (slots.length === 0) {
+      return res.status(400).json({
+        message: "Sesi tak punya baris absensi untuk dikonversi.",
+        status: "failed",
+        status_code: "400",
+      });
+    }
+
+    const getPotonganLate = await absensiModel.getPotonganLate(1);
+    const potonganLate = Number(getPotonganLate?.value || 0);
+    const updatedAt = moment().tz(timezone).format("YYYY-MM-DD HH:mm:ss");
+
+    // Pra-validasi + hitung field per slot SEBELUM transaksi (fail fast).
+    let typeChangedAny = false;
+    let kategoriBaruSesi = null;
+    for (const slot of slots) {
+      const oldRow = await absensiModel.getAbsensiById(slot.absensiId);
+      if (!oldRow) {
+        return res.status(404).json({
+          message: `Baris absensi #${slot.absensiId} tidak ditemukan.`,
+          status: "failed",
+          status_code: "404",
+        });
+      }
+      slot.oldRow = oldRow;
+
+      const typeGiven =
+        slot.newTypeInput !== undefined &&
+        slot.newTypeInput !== null &&
+        String(slot.newTypeInput) !== "";
+      const newTypeId = typeGiven ? Number(slot.newTypeInput) : Number(oldRow.absen_type_id);
+      slot.typeChanged = newTypeId !== Number(oldRow.absen_type_id);
+      slot.newTypeId = newTypeId;
+
+      if (slot.typeChanged) {
+        const newType = await absensiModel.getTimeDB(newTypeId);
+        if (!newType) {
+          return res.status(404).json({
+            message: `Tipe absen #${newTypeId} tidak ditemukan.`,
+            status: "failed",
+            status_code: "404",
+          });
+        }
+        // Guard arah: tipe baru harus searah slot (masuk↔masuk / keluar↔keluar).
+        const newDir = absenDirectionOf(newType.description);
+        if (newDir && newDir !== slot.dir) {
+          return res.status(400).json({
+            message: `Tipe absen untuk slot ${slot.dir} arahnya (${newDir}) tidak sesuai. Pilih tipe ${slot.dir}.`,
+            status: "failed",
+            status_code: "400",
+          });
+        }
+
+        // Recompute status_absen + potongan dari jam absen row vs window tipe baru.
+        const endTimeDB = moment
+          .tz(newType.end_time, "HH:mm:ss", timezone)
+          .format("HH:mm:ss");
+        const rowHHmmss = moment
+          .tz(oldRow.absen_time, timezone)
+          .format("HH:mm:ss");
+        const statusAbsen = rowHHmmss < endTimeDB ? 1 : 2;
+        let potongan = 0;
+        if (statusAbsen === 2) {
+          const diffMinutes = moment(rowHHmmss, "HH:mm:ss").diff(
+            moment(endTimeDB, "HH:mm:ss"),
+            "minutes"
+          );
+          if (diffMinutes > 15) potongan = potonganLate;
+        }
+        slot.statusAbsen = statusAbsen;
+        slot.potongan = potongan;
+
+        typeChangedAny = true;
+        // Kategori sesi diselaraskan dari tipe MASUK (anchor). Fallback kategori
+        // tipe keluar pasangan bila kategori tipe masuk NULL.
+        if (slot.dir === "masuk") {
+          kategoriBaruSesi =
+            newType.kategori_absen ||
+            (await absensiModel.getKeluarKategoriByName(newType.name)) ||
+            null;
+        }
+      }
+    }
+
+    const conn = await dbpool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      for (const slot of slots) {
+        await absensiModel.updateAbsensiLemburType(
+          conn,
+          slot.absensiId,
+          {
+            is_lembur: targetLembur,
+            absen_type_id: slot.typeChanged ? slot.newTypeId : undefined,
+            status_absen: slot.typeChanged ? slot.statusAbsen : undefined,
+            potongan: slot.typeChanged ? slot.potongan : undefined,
+            updated_at: updatedAt,
+          },
+          adminId,
+          slot.oldRow
+        );
+      }
+
+      await sesiModel.updateSesiLembur(conn, sesiId, targetLembur, updatedAt);
+
+      // Selaraskan kategori sesi bila tipe masuk berganti (cegah sesi pecah).
+      if (kategoriBaruSesi !== null && String(kategoriBaruSesi) !== String(sesi.kategori_absen || "")) {
+        await sesiModel.updateSesiKategori(conn, sesiId, kategoriBaruSesi, updatedAt);
+      }
+
+      await logSesiActivity(
+        conn,
+        "CONVERT_LEMBUR",
+        {
+          sesi_id: Number(sesiId),
+          old_is_lembur: sesi.is_lembur,
+          new_is_lembur: targetLembur,
+          type_changed: typeChangedAny,
+          slots: slots.map((s) => ({
+            absensi_id: s.absensiId,
+            dir: s.dir,
+            old_type: s.oldRow.absen_type_id,
+            new_type: s.typeChanged ? s.newTypeId : s.oldRow.absen_type_id,
+          })),
+        },
+        adminId
+      );
+
+      await conn.commit();
+    } catch (txError) {
+      await conn.rollback();
+      throw txError;
+    } finally {
+      conn.release();
+    }
+
+    return res.json({
+      message: `Sesi dikonversi ke ${targetLembur === 1 ? "Lembur" : "Regular"}.`,
+      status: "success",
+      status_code: "200",
+      data: {
+        sesi_id: Number(sesiId),
+        is_lembur: targetLembur,
+        type_changed: typeChangedAny,
+        updated_at: updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error("Error konversiLemburSesi:", error);
+    return res.status(500).json({
+      message: "Gagal konversi sesi lembur.",
+      status: "failed",
+      status_code: "500",
+      serverMessage: error.message,
+    });
+  }
+};
+
 // POST /api/absensi/delete/:absenId — hapus 1 baris absensi (admin).
 // Hard delete (tabel tak punya kolom soft-delete) + snapshot ke log_activity.
 // Sesi terkait disesuaikan: slot yang mereferensi baris ini di-NULL-kan & status
@@ -1133,6 +1344,7 @@ const SESI_ACTION_ENUM = {
   UPDATE_STATUS: "UPDATE",
   ADD_ABSEN: "INSERT",
   DELETE: "DELETE",
+  CONVERT_LEMBUR: "UPDATE",
 };
 const logSesiActivity = async (conn, action, payload, adminId) => {
   const enumAction = SESI_ACTION_ENUM[action] || "UPDATE";
@@ -1667,6 +1879,7 @@ module.exports = {
   cekFeePeruser,
   historyAbsensiAllUser,
   koreksiAbsen,
+  konversiLemburSesi,
   deleteAbsensiRow,
   listTipeAbsenByDirection,
   listSesiAbsensi,
