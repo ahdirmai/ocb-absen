@@ -1,5 +1,8 @@
 require("dotenv").config();
+const moment = require("moment-timezone");
 const dbpool = require("../src/config/database");
+
+const timezone = "Asia/Makassar";
 
 // Backfill absensi_sesi dari data absensi historis (forward-only companion).
 // Grup per (user_id, DATE, kategori_absen, is_lembur). Pasangkan masuk<->keluar.
@@ -63,10 +66,9 @@ const direction = (desc) => {
         stats.neither++;
         continue;
       }
-      const dateStr =
-        r.absen_time instanceof Date
-          ? r.absen_time.toISOString().slice(0, 10)
-          : String(r.absen_time).slice(0, 10);
+      // Anchor tanggal WITA (bukan UTC). toISOString() sebelumnya menggeser
+      // masuk 00:00-07:59 WITA ke hari kemarin -> sesi mis-anchor -> strict TL.
+      const dateStr = moment(r.absen_time).tz(timezone).format("YYYY-MM-DD");
       const lembur = r.is_lembur === 1 ? 1 : 0;
       const key = `${r.user_id}|${dateStr}|${r.kategori_absen || ""}|${lembur}`;
       if (!groups.has(key)) {
