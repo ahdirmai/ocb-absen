@@ -1,7 +1,7 @@
 const APK_VIEW_URL =
-  "https://drive.google.com/file/d/1w1_7LBSObTb4R64xt0uR0gXyVIrzATkZ/view?usp=sharing";
+  "https://drive.google.com/file/d/1b3qXlPrZTh7VcigAKMDlZcY1zQCqBJd7/view?usp=sharing";
 const APK_DOWNLOAD_URL =
-  "https://drive.google.com/uc?export=download&id=1w1_7LBSObTb4R64xt0uR0gXyVIrzATkZ";
+  "https://drive.google.com/uc?export=download&id=1b3qXlPrZTh7VcigAKMDlZcY1zQCqBJd7";
 
 const steps = [
   {
