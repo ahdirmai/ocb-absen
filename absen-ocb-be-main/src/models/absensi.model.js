@@ -302,8 +302,14 @@ const historyAbsensiPerUser = async (userId, body) => {
 
    
     if (!body.start_date && !body.end_date) {
-        SQLQuery += ` AND MONTH(a.absen_time) = MONTH(CURDATE()) 
-                      AND YEAR(a.absen_time) = YEAR(CURDATE())`;
+        // Default: bulan berjalan. TAPI sertakan baris sesi masih 'open' (masuk
+        // cross-date belum ditutup) walau beda bulan — cegah tombol keluar hilang
+        // di batas bulan (masuk 31 malam, keluar 1 bulan berikut). Dibatasi 2 hari
+        // ke belakang agar tak menarik open basi lama.
+        SQLQuery += ` AND (
+            (MONTH(a.absen_time) = MONTH(CURDATE()) AND YEAR(a.absen_time) = YEAR(CURDATE()))
+            OR (s.status = 'open' AND a.absen_time >= (CURDATE() - INTERVAL 2 DAY))
+        )`;
     }
 
     SQLQuery += ` ORDER BY a.absen_time DESC`;
