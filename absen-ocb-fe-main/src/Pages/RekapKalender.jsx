@@ -721,7 +721,7 @@ const RekapKalender = () => {
                           {Number(row.is_valid) !== 1 && <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999, background: "#ffebee", color: "#c62828" }}>Invalid</span>}
                         </div>
                         <div style={{ fontWeight: 600, color: "#37474f", fontSize: 14, marginTop: 3 }}>
-                          {row.absen_time ? format(new Date(row.absen_time), "HH:mm:ss") : "-"}
+                          {row.absen_time ? format(new Date(row.absen_time), "dd/MM/yyyy HH:mm:ss") : "-"}
                           <span style={{ fontSize: 12, color: "#90a4ae", fontWeight: 400 }}> · {row.category_absen || row.description}</span>
                         </div>
                         {row.reason && (
