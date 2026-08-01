@@ -382,6 +382,7 @@ const AbsenKaryawan = () => {
   const [lemburRetails, setLemburRetails] = useState([]);
   const [selectedLemburRetail, setSelectedLemburRetail] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
+  const [hasSubordinates, setHasSubordinates] = useState(false);
   const [stream, setStream] = useState(null);
   const [cameraActive, setCameraActive] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -1029,6 +1030,19 @@ const AbsenKaryawan = () => {
 
       const historyData = await fetchHistory(token, userId);
       await fetchAbsenTypes(token, userId, historyData);
+
+      // Cek apakah user ini atasan (punya bawahan) -> tampilkan menu Approval.
+      try {
+        const upRes = await axios.get(
+          `${VITE_API_URL}/users/under-upline/${userId}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (activeAuthKeyRef.current === authKey) {
+          setHasSubordinates((upRes.data?.data || []).length > 0);
+        }
+      } catch {
+        // opsional — abaikan bila gagal, menu approval cukup disembunyikan
+      }
     } catch (error) {
       console.error("Error fetching profile:", error);
 
@@ -1524,6 +1538,21 @@ const AbsenKaryawan = () => {
       >
         <h2 style={{ color: "#e74c3c", margin: 0 }}>Absen Karyawan</h2>
         <div style={{ display: "flex", gap: "8px" }}>
+          {hasSubordinates && (
+            <button
+              onClick={() => (window.location.href = "/absen/approval")}
+              style={{
+                padding: "8px 15px",
+                background: "#e67e22",
+                color: "white",
+                border: "none",
+                borderRadius: "5px",
+                cursor: "pointer",
+              }}
+            >
+              Approval
+            </button>
+          )}
           <button
             onClick={() => (window.location.href = "/absen/jadwal")}
             style={{
@@ -1595,6 +1624,9 @@ const AbsenKaryawan = () => {
           </p>
           <p style={{ margin: "5px 0" }}>
             <strong>Retail Shift:</strong> {selectedTypeDetail?.retail_name || userProfile.retail_name || "-"}
+          </p>
+          <p style={{ margin: "5px 0" }}>
+            <strong>Atasan:</strong> {userProfile.upline || "-"}
           </p>
         </div>
       )}

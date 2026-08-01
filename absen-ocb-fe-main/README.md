@@ -40,6 +40,14 @@ VITE_API_IMAGE=http://localhost:4000        # base URL file gambar/video (foto a
 - **Retail** (`/retails`) — kelola OC/Store: nama, koordinat, radius, status. Tombol buka lokasi di Google Maps. Toggle UI Lama/Baru.
 - Users, Off Day, Potongan, Bonus, Laporan, Salary/KPI, Dashboard.
 
+## Halaman karyawan (self-service, login sendiri)
+
+Route publik tanpa sidebar admin — dibuka karyawan dari HP, pakai sesi login sendiri (`localStorage` `token`+`userId`).
+
+- **Absen** (`/absen`) — absen masuk/keluar (foto selfie + GPS radius OC), riwayat, lembur. Card profil tampilkan Nama, Username, Retail Shift, **Atasan**.
+- **Jadwal Saya** (`/absen/jadwal`) — jadwal bulanan (kalender) untuk karyawan berjadwal-harian.
+- **Approval** (`/absen/approval`) — khusus atasan/SPV: setujui/tolak absen bawahan yang butuh approval (telat/lembur). Tab Pending + Riwayat, hanya absen hari ini + kemarin (H-1). Tombol muncul di `/absen` hanya bila punya bawahan.
+
 ## Catatan UI
 
 Beberapa halaman (Absensi, Users, Shifting, Tipe Absen, Retail) punya toggle **UI Lama / UI Baru** di header. Pilihan tersimpan di `localStorage` (`*_ui_mode`), default **Baru**. UI Lama tetap tersedia sebagai fallback.

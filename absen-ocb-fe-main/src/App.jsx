@@ -25,6 +25,7 @@ import JadwalHarian from "./Pages/JadwalHarian";
 import SesiAbsensi from "./Pages/SesiAbsensi";
 import UpdateApp from "./Pages/UpdateApp";
 import JadwalKaryawan from "./Pages/JadwalKaryawan";
+import ApprovalAbsen from "./Pages/ApprovalAbsen";
 function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const toggleSidebar = () => {
@@ -39,6 +40,8 @@ function App() {
         <Route path="/absen" element={<AbsenKaryawan />} />
         {/* Jadwal bulanan karyawan - self, pakai sesi /absen */}
         <Route path="/absen/jadwal" element={<JadwalKaryawan />} />
+        {/* Approval absen bawahan (khusus atasan/SPV) - self, pakai sesi /absen */}
+        <Route path="/absen/approval" element={<ApprovalAbsen />} />
         {/* Panduan install APK - publik, dibuka karyawan dari HP */}
         <Route path="/update" element={<UpdateApp />} />
         {/* Layout dengan Header dan Sidebar */}
