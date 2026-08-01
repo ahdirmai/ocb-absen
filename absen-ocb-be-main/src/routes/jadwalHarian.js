@@ -10,6 +10,8 @@ router.get("/eligible-users", authenticateToken, jadwalHarianController.getEligi
 router.get("/active-retails", authenticateToken, jadwalHarianController.getActiveJadwalRetails);
 // List jadwal per bulan (?month=YYYY-MM&retail_id=optional)
 router.get("/", authenticateToken, jadwalHarianController.getJadwal);
+// Jadwal bulanan 1 user (view karyawan sendiri) (?month=YYYY-MM)
+router.get("/user/:userId", authenticateToken, jadwalHarianController.getJadwalUser);
 // Karyawan terhubung ke retail (via shifting + shift_employes)
 router.get("/employees/:retailId", authenticateToken, jadwalHarianController.getEmployeesByRetail);
 // Opsi kategori_absen (shift) Sales Toko / Trainee (basis group_absen)

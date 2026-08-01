@@ -1523,19 +1523,34 @@ const AbsenKaryawan = () => {
         }}
       >
         <h2 style={{ color: "#e74c3c", margin: 0 }}>Absen Karyawan</h2>
-        <button
-          onClick={handleLogout}
-          style={{
-            padding: "8px 15px",
-            background: "#95a5a6",
-            color: "white",
-            border: "none",
-            borderRadius: "5px",
-            cursor: "pointer",
-          }}
-        >
-          Logout
-        </button>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button
+            onClick={() => (window.location.href = "/absen/jadwal")}
+            style={{
+              padding: "8px 15px",
+              background: "#3498db",
+              color: "white",
+              border: "none",
+              borderRadius: "5px",
+              cursor: "pointer",
+            }}
+          >
+            Jadwal
+          </button>
+          <button
+            onClick={handleLogout}
+            style={{
+              padding: "8px 15px",
+              background: "#95a5a6",
+              color: "white",
+              border: "none",
+              borderRadius: "5px",
+              cursor: "pointer",
+            }}
+          >
+            Logout
+          </button>
+        </div>
       </div>
 
       <div

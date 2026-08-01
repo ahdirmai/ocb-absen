@@ -4,6 +4,7 @@ const path = require("path");
 const ExcelJS = require("exceljs");
 const dbpool = require("../config/database");
 const jadwalHarianModel = require("../models/jadwalHarian.model");
+const absenManagementModel = require("../models/absenManagement.model");
 
 const timezone = "Asia/Makassar";
 
@@ -55,6 +56,38 @@ const getEligibleUsers = async (_req, res) => {
       status: "success",
       status_code: "200",
       data,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Internal Server Error",
+      status: "failed",
+      status_code: "500",
+      serverMessage: error.message || error,
+    });
+  }
+};
+
+// Jadwal bulanan 1 user (view karyawan sendiri). Sertakan flag apakah user
+// memang pakai jadwal harian — FE tampilkan pesan bila tidak.
+const getJadwalUser = async (req, res) => {
+  const { userId } = req.params;
+  const month =
+    req.query.month && /^\d{4}-\d{2}$/.test(req.query.month)
+      ? req.query.month
+      : moment().tz(timezone).format("YYYY-MM");
+
+  try {
+    const usesJadwal = await absenManagementModel.userUsesJadwalHarian(userId);
+    const [jadwal] = usesJadwal
+      ? await jadwalHarianModel.getJadwalByUserMonth(userId, month)
+      : [[]];
+    res.json({
+      message: "Get jadwal user success",
+      status: "success",
+      status_code: "200",
+      uses_jadwal_harian: usesJadwal,
+      month,
+      jadwal,
     });
   } catch (error) {
     res.status(500).json({
@@ -729,6 +762,7 @@ module.exports = {
   getActiveJadwalRetails,
   getEmployeesByRetail,
   getJadwal,
+  getJadwalUser,
   getKategoriShift,
   getByDate,
   assign,

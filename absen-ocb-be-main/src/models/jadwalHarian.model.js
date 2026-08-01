@@ -39,6 +39,26 @@ const getJadwalByMonth = (month, retailId) => {
   return dbpool.query(SQLQuery, params);
 };
 
+// Jadwal 1 user pada 1 bulan (untuk view karyawan sendiri). Bawa jam masuk/keluar
+// dari tipe_absen (tm = masuk, tk = keluar).
+const getJadwalByUserMonth = (userId, month) => {
+  const SQLQuery = `
+    SELECT
+      j.id, DATE_FORMAT(j.tanggal, '%Y-%m-%d') AS tanggal,
+      j.retail_id, r.name AS retail_name,
+      tm.name AS shift_name, tm.kategori_absen,
+      tm.start_time AS masuk_time, tk.start_time AS keluar_time
+    FROM jadwal_harian j
+    JOIN retail r ON r.retail_id = j.retail_id
+    JOIN tipe_absen tm ON tm.absen_id = j.absen_masuk_id
+    LEFT JOIN tipe_absen tk ON tk.absen_id = j.absen_keluar_id
+    WHERE j.is_deleted = 0
+      AND j.user_id = ?
+      AND DATE_FORMAT(j.tanggal, '%Y-%m') = ?
+    ORDER BY j.tanggal ASC`;
+  return dbpool.query(SQLQuery, [userId, month]);
+};
+
 // Upsert bulk: banyak user x banyak tanggal ke retail + shift (absen_masuk_id, absen_keluar_id).
 // UNIQUE(user_id, tanggal) => re-assign meng-update baris, bukan menduplikat.
 const assignJadwal = (rows) => {
@@ -235,6 +255,7 @@ module.exports = {
   getActiveRetailEmployees,
   getEmployeesByRetail,
   getJadwalByMonth,
+  getJadwalByUserMonth,
   getKategoriShift,
   getJadwalByDate,
   assignJadwal,

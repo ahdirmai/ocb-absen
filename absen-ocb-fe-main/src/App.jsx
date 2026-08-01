@@ -24,6 +24,7 @@ import RekapKalender from "./Pages/RekapKalender";
 import JadwalHarian from "./Pages/JadwalHarian";
 import SesiAbsensi from "./Pages/SesiAbsensi";
 import UpdateApp from "./Pages/UpdateApp";
+import JadwalKaryawan from "./Pages/JadwalKaryawan";
 function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const toggleSidebar = () => {
@@ -36,6 +37,8 @@ function App() {
         <Route path="/login" element={<Login />} />
         {/* Halaman Absen Karyawan - pakai login sendiri */}
         <Route path="/absen" element={<AbsenKaryawan />} />
+        {/* Jadwal bulanan karyawan - self, pakai sesi /absen */}
+        <Route path="/absen/jadwal" element={<JadwalKaryawan />} />
         {/* Panduan install APK - publik, dibuka karyawan dari HP */}
         <Route path="/update" element={<UpdateApp />} />
         {/* Layout dengan Header dan Sidebar */}
