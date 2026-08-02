@@ -224,6 +224,12 @@ public class AbsenLogic {
             if (h == null) continue;
             if (h.is_lembur != 1) continue;
             if (isRejectedAttendance(h)) continue;
+            // Penutup lembur cross-date (sesi closed) bertanggal hari ini = milik
+            // shift lembur KEMARIN (masuk kemarin, keluar dini hari ini), bukan
+            // lembur hari ini. Selaras guard regular (buildTodayAttendanceStatus /
+            // attendanceMode) — else hasClosed salah true → lemburDirection kosong
+            // → tipe lembur kosong → user tak bisa lembur baru hari ini.
+            if (h.is_cross_date == 1 && "closed".equals(h.sesi_status)) continue;
             if (!isTodayOrCrossActive(h)) continue;
             s.rows.add(h);
             if (h.sesi_id != null) {
