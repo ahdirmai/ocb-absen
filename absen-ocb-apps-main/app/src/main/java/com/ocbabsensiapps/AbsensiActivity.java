@@ -121,7 +121,12 @@ public class AbsensiActivity extends AppCompatActivity {
 
         spinnerLemburRetail.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
-                if (pos >= 0 && pos < lemburRetails.size()) selectedLemburRetail = lemburRetails.get(pos);
+                if (pos >= 0 && pos < lemburRetails.size()) {
+                    selectedLemburRetail = lemburRetails.get(pos);
+                    // Sinkronkan OC terpilih ke AbsenAdapter sekarang juga — cegah OC
+                    // stale (default OC pertama) terkirim saat klik absen pertama.
+                    applyDisplayFilter();
+                }
             }
             @Override public void onNothingSelected(AdapterView<?> p) { }
         });
@@ -299,6 +304,10 @@ public class AbsensiActivity extends AppCompatActivity {
         AbsenLogic.DirStatus todayStatus = AbsenLogic.buildTodayAttendanceStatus(history);
         boolean hasCompletedRegular = AbsenLogic.hasCompletedRegular(todayStatus);
         String nextRegularDirection = AbsenLogic.nextRegularDirection(history);
+        // Lembur jalur non-jadwal (pakai ulang tipe regular): saat regular komplit,
+        // arah lembur berikutnya dari getNextOvertimeDirection (port web).
+        String nextOvertimeDirection = hasCompletedRegular
+                ? AbsenLogic.getNextOvertimeDirection(history) : "";
         String masukKategori = AbsenLogic.masukRegularKategori(history);
 
         String mode = AbsenLogic.attendanceMode(history);
@@ -317,11 +326,13 @@ public class AbsensiActivity extends AppCompatActivity {
             String dir = AbsenLogic.directionOf(type);
             if (dir.isEmpty()) continue;
             if (AbsenLogic.hasTodayForTimeCategory(history, type)) continue;
-            // Regular: hanya arah berikutnya. (Bila regular komplit, tak ada
-            // tipe regular berikutnya — user lanjut ke lembur.)
-            String expected = hasCompletedRegular ? "" : nextRegularDirection;
+            // Regular komplit → arah lembur (pakai tipe regular kategori beda,
+            // dedup di atas sudah buang kategori yang sudah dipakai). Belum komplit
+            // → arah regular berikutnya.
+            String expected = hasCompletedRegular ? nextOvertimeDirection : nextRegularDirection;
             if (!dir.equals(expected)) continue;
-            // Keluar terkunci ke kategori masuk.
+            // Keluar regular terkunci ke kategori masuk (hanya jalur regular; lembur
+            // pakai tipe regular tak dikunci kategori — selaras web).
             if (!hasCompletedRegular && dir.equals("keluar") && !masukKategori.isEmpty()) {
                 String tk = type.getKategori_absen() == null ? "" : type.getKategori_absen().trim();
                 if (!tk.equalsIgnoreCase(masukKategori)) continue;

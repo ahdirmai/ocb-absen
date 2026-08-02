@@ -299,6 +299,64 @@ public class AbsenLogic {
         return out;
     }
 
+    // ── Lembur jalur NON-JADWAL (pakai ulang tipe regular) ──
+    // Port web getNextOvertimeDirection/buildTodayOvertimeItems. Untuk user
+    // non-jadwal yang regular-nya sudah komplit: lembur ditandai lewat reason
+    // "lembur", pakai TIPE REGULAR yang sama (bukan tipe lembur kategori-'pagi').
+    // Item ke-2+ per arah hari ini = lembur; item ke-1 lembur hanya bila reason.
+    public static boolean isOvertimeAttendance(HistoryItem h) {
+        return h != null && h.reason != null
+                && h.reason.toLowerCase(Locale.US).contains("lembur");
+    }
+
+    private static List<HistoryItem> todayDirectionItemsAsc(List<HistoryItem> rows, String dir) {
+        List<HistoryItem> out = new ArrayList<>();
+        for (HistoryItem h : rows) {
+            if (h == null) continue;
+            if (!directionOf(h).equals(dir)) continue;
+            if (!isSameLocalDate(h.absen_time)) continue;
+            out.add(h);
+        }
+        Collections.sort(out, new Comparator<HistoryItem>() {
+            @Override public int compare(HistoryItem a, HistoryItem b) {
+                return Long.compare(timeOf(a), timeOf(b)); // ASC
+            }
+        });
+        return out;
+    }
+
+    public static List<HistoryItem> buildTodayOvertimeItems(List<HistoryItem> rows) {
+        List<HistoryItem> out = new ArrayList<>();
+        if (!hasCompletedRegular(buildTodayAttendanceStatus(rows))) return out;
+        Set<String> seen = new HashSet<>();
+        for (String dir : new String[]{"masuk", "keluar"}) {
+            List<HistoryItem> items = todayDirectionItemsAsc(rows, dir);
+            for (int i = 0; i < items.size(); i++) {
+                HistoryItem it = items.get(i);
+                if (i == 0 && !isOvertimeAttendance(it)) continue;
+                String key = it.absensi_id != null ? it.absensi_id
+                        : dir + "-" + (it.absen_time == null ? "" : it.absen_time);
+                if (seen.add(key)) out.add(it);
+            }
+        }
+        return out;
+    }
+
+    // Arah lembur berikutnya (jalur non-jadwal, pakai tipe regular).
+    public static String getNextOvertimeDirection(List<HistoryItem> rows) {
+        List<HistoryItem> ot = buildTodayOvertimeItems(rows);
+        boolean hasMasuk = false, hasKeluar = false;
+        for (HistoryItem h : ot) {
+            if (isRejectedAttendance(h)) continue;
+            String d = directionOf(h);
+            if ("masuk".equals(d)) hasMasuk = true;
+            if ("keluar".equals(d)) hasKeluar = true;
+        }
+        if (!hasMasuk) return "masuk";
+        if (!hasKeluar) return "keluar";
+        return "masuk";
+    }
+
     // ── nextRegularDirection ──
     // openRegularMasuk != null → "keluar"; else masuk belum → "masuk";
     // keluar belum → "keluar"; else "".

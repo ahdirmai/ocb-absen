@@ -55,6 +55,7 @@
         <activity android:name=".StatusAbsenActivity"></activity>
         <activity android:name=".HistoryAbsenActivity"></activity>
         <activity android:name=".ProfileActivity"></activity>
+        <activity android:name=".JadwalActivity"></activity>
         <activity android:name=".ApprovalActivity"></activity>
         <activity android:name=".ApprovalDetailActivity"></activity>
         <activity android:name=".ListKaryawanActivity"></activity>

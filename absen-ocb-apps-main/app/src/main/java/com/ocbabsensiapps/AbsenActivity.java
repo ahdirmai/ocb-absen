@@ -92,6 +92,10 @@ public class AbsenActivity extends AppCompatActivity {
     private VideoView videoPreview;
     private double userLat, userLng;
     private double targetLatDouble, targetLngDouble, radiusDouble;
+    // Luar radius = blok submit (selaras BE checkAbsensi + web). hasValidTarget
+    // false bila retail tak punya koordinat/radius → BE lewati cek, jangan blok.
+    private boolean hasValidTarget = false;
+    private boolean outsideRadius = false;
     File photoFile;
     private FrameLayout progressOverlay;
     private EditText editTextCatatan;
@@ -152,7 +156,9 @@ public class AbsenActivity extends AppCompatActivity {
                 targetLatDouble = Double.parseDouble(targetLat);
                 targetLngDouble = Double.parseDouble(targetLng);
                 radiusDouble = Double.parseDouble(radius);
+                hasValidTarget = true;
             } catch (NumberFormatException e) {
+                hasValidTarget = false;
                 Toast.makeText(this, "Invalid location data", Toast.LENGTH_SHORT).show();
             }
         }
@@ -422,6 +428,14 @@ public class AbsenActivity extends AppCompatActivity {
     }
 
     private void submitAbsen() {
+        // Luar radius = blok submit (BE tolak 400). Cegah upload foto sia-sia.
+        if (outsideRadius) {
+            Toast.makeText(this,
+                    "Anda di luar radius lokasi OC. Absen hanya bisa di dalam radius — mendekatlah ke lokasi.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+
         // Pre-check early-masuk (1 jam sebelum start_time) — cegah upload sia-sia.
         // BE tetap sumber kebenaran (400). Cek untuk tipe MASUK yang punya start_time.
         AbsenItem probe = new AbsenItem(absen_id, "", description == null ? "" : description,
@@ -485,10 +499,12 @@ public class AbsenActivity extends AppCompatActivity {
         userLat = location.getLatitude();
         userLng = location.getLongitude();
 
-        updateLocationUI();
         updateMapMarker();
         progressOverlay.setVisibility(View.GONE);
         setButtonsEnabled(true);
+        // updateLocationUI terakhir — punya final say atas state tombol submit
+        // (disable bila luar radius), tak di-override setButtonsEnabled(true).
+        updateLocationUI();
     }
 
     private void onLocationFailed() {
@@ -502,18 +518,38 @@ public class AbsenActivity extends AppCompatActivity {
 
 
     private void updateLocationUI() {
+        // Retail tanpa koordinat/radius: BE lewati cek radius → jangan blok di klien.
+        if (!hasValidTarget) {
+            outsideRadius = false;
+            isNeedApprove = "0";
+            reason = "";
+            textViewLocationStatus.setText("Lokasi terdeteksi");
+            textViewLocationStatus.setTextColor(Color.GREEN);
+            buttonSubmitAbsen.setEnabled(true);
+            return;
+        }
+
         float distanceInMeters = calculateDistance(userLat, userLng, targetLatDouble, targetLngDouble);
 
         if (distanceInMeters <= radiusDouble) {
+            outsideRadius = false;
             textViewLocationStatus.setText("Anda berada di dalam radius");
             textViewLocationStatus.setTextColor(Color.GREEN);
             isNeedApprove = "0";
             reason = "";
+            buttonSubmitAbsen.setEnabled(true);
         } else {
-            textViewLocationStatus.setText("Anda berada di luar radius, absen akan membutuhkan approval");
-            textViewLocationStatus.setTextColor(Color.parseColor("#FFA726"));
-            isNeedApprove = "1";
-            reason = "Absen di luar radius";
+            // Luar radius = tak bisa absen (BE tolak 400). Blok submit + pesan jelas,
+            // bukan lagi "menunggu approval" yang menyesatkan.
+            outsideRadius = true;
+            int jarak = Math.round(distanceInMeters);
+            int maks = (int) Math.round(radiusDouble);
+            textViewLocationStatus.setText("Anda " + jarak + "m dari lokasi (maks " + maks
+                    + "m). Tidak bisa absen — mendekatlah ke lokasi OC.");
+            textViewLocationStatus.setTextColor(Color.parseColor("#E53935"));
+            isNeedApprove = "0";
+            reason = "";
+            buttonSubmitAbsen.setEnabled(false);
         }
     }
 

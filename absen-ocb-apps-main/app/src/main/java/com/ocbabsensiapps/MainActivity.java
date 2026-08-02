@@ -104,6 +104,7 @@ public class MainActivity extends AppCompatActivity {
         menuList.add(new MenuItem("Profile", R.drawable.ic_contacts));
         menuList.add(new MenuItem("Aprroval", R.drawable.ic_approval2));
         menuList.add(new MenuItem("Staff", R.drawable.ic_check));
+        menuList.add(new MenuItem("Jadwal", R.drawable.ic_clock));
         // Adapter dengan listener klik
          menuAdapter = new MenuAdapter(this, menuList, position -> {
             switch (position) {
@@ -118,6 +119,9 @@ public class MainActivity extends AppCompatActivity {
                     break;
                 case 3:
                     startActivity(new Intent(MainActivity.this, ListKaryawanActivity.class));
+                    break;
+                case 4:
+                    startActivity(new Intent(MainActivity.this, JadwalActivity.class));
                     break;
                 default:
                     Toast.makeText(MainActivity.this, "Unknown menu clicked", Toast.LENGTH_SHORT).show();
@@ -138,6 +142,46 @@ public class MainActivity extends AppCompatActivity {
             closeModal();
             logOut();
         });
+
+        showUpdateInfoIfNeeded();
+    }
+
+    // Popup info fitur baru — tampil sekali per versi app. Bandingkan versionCode
+    // terpasang dengan yang terakhir dilihat (SharedPreferences). Baru install /
+    // baru update (versi beda) → tampilkan dialog, lalu catat versi.
+    private void showUpdateInfoIfNeeded() {
+        SharedPreferences sp = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+        long installed;
+        String versionName = "";
+        try {
+            android.content.pm.PackageInfo pi =
+                    getPackageManager().getPackageInfo(getPackageName(), 0);
+            versionName = pi.versionName;
+            installed = android.os.Build.VERSION.SDK_INT >= 28
+                    ? pi.getLongVersionCode() : pi.versionCode;
+        } catch (Exception e) {
+            return; // gagal ambil versi → jangan ganggu user
+        }
+
+        long lastSeen = sp.getLong("lastSeenVersionCode", -1);
+        if (lastSeen == installed) return; // sudah pernah lihat versi ini
+
+        String pesan =
+                "Fitur & perbaikan terbaru:\n\n" +
+                "• Jadwal Saya — lihat jadwal shift bulananmu (menu Jadwal).\n" +
+                "• Approval — atasan bisa setujui/tolak absen bawahan.\n" +
+                "• Profil kini menampilkan Atasan kamu.\n" +
+                "• Absen di luar radius OC kini diblokir dengan pesan jelas.\n" +
+                "• Perbaikan alur lembur setelah shift regular.";
+
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Aplikasi Diperbarui (v" + versionName + ")")
+                .setMessage(pesan)
+                .setPositiveButton("Mengerti", null)
+                .setCancelable(true)
+                .show();
+
+        sp.edit().putLong("lastSeenVersionCode", installed).apply();
     }
     private void fetchProfile() {
         String url = Constant.API + "users/profile/" + userId;
@@ -168,6 +212,10 @@ public class MainActivity extends AppCompatActivity {
                             ImageView profileImageView = findViewById(R.id.profileImageView);
 
                             Log.d("id_category", id_category);
+
+                            // Simpan nama untuk dipakai layar lain (mis. Jadwal).
+                            getSharedPreferences("AppPrefs", MODE_PRIVATE)
+                                    .edit().putString("userName", name).apply();
 
                             menuAdapter.notifyDataSetChanged();
                             greeting.setText("Halo, " + name );
