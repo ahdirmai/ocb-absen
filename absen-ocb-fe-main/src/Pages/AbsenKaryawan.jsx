@@ -212,6 +212,13 @@ const buildTodayLemburStatus = (rows = []) => {
     if (!direction) return;
     if (item?.is_lembur !== 1 && item?.is_lembur !== "1") return;
     if (isRejectedAttendance(item)) return;
+    // Penutup lembur cross-date (sesi closed) bertanggal hari ini = milik shift
+    // lembur KEMARIN, bukan lembur hari ini. Selaras guard regular.
+    if (
+      (item?.is_cross_date === 1 || item?.is_cross_date === "1") &&
+      item?.sesi_status === "closed"
+    )
+      return;
     // Absen lembur hari ini, ATAU masuk lembur cross-date yang sesinya masih OPEN
     // (mis. SUBUH masuk 23:42 kemarin) — tetap tampil di card status.
     if (!isSameLocalDate(item.absen_time) && !isCrossDateSesiActive(item, now)) return;
@@ -240,7 +247,15 @@ const getTodayDirectionItems = (rows = [], direction) =>
   rows
     .filter(
       (item) =>
-        getAbsenDirection(item) === direction && isSameLocalDate(item.absen_time)
+        getAbsenDirection(item) === direction &&
+        isSameLocalDate(item.absen_time) &&
+        // Penutup shift/lembur cross-date (sesi closed) bertanggal hari ini =
+        // milik shift KEMARIN, bukan absen hari ini. Selaras guard lain — else
+        // salah dihitung sbg lembur keluar hari ini → arah/panel lembur meleset.
+        !(
+          (item?.is_cross_date === 1 || item?.is_cross_date === "1") &&
+          item?.sesi_status === "closed"
+        )
     )
     .sort((a, b) => new Date(a.absen_time).getTime() - new Date(b.absen_time).getTime());
 
@@ -506,6 +521,14 @@ const AbsenKaryawan = () => {
       (item) =>
         (item.is_lembur === 1 || item.is_lembur === "1") &&
         !isRejectedAttendance(item) &&
+        // Penutup lembur cross-date (sesi closed) bertanggal hari ini = milik
+        // shift lembur KEMARIN (masuk kemarin, keluar dini hari ini), bukan
+        // lembur hari ini. Selaras guard regular — else hasClosed salah true →
+        // lemburDirection kosong → user tak bisa lembur baru hari ini.
+        !(
+          (item.is_cross_date === 1 || item.is_cross_date === "1") &&
+          item.sesi_status === "closed"
+        ) &&
         // Absen lembur hari ini, ATAU masuk lembur cross-date yang sesinya masih
         // OPEN (mis. SUBUH masuk 23:42 kemarin, belum keluar) — tetap dihitung.
         (isSameLocalDate(item.absen_time) || isCrossDateSesiActive(item, now))
