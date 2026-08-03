@@ -1,7 +1,39 @@
-const APK_VIEW_URL =
-  "https://drive.google.com/file/d/1b3qXlPrZTh7VcigAKMDlZcY1zQCqBJd7/view?usp=sharing";
-const APK_DOWNLOAD_URL =
-  "https://drive.google.com/uc?export=download&id=1b3qXlPrZTh7VcigAKMDlZcY1zQCqBJd7";
+const versions = [
+  {
+    version: "1.5.2",
+    date: "2 Agustus 2026",
+    latest: true,
+    viewUrl:
+      "https://drive.google.com/file/d/1aY3W6jziOLaWGftI8eCrsWfJHDZFd1AP/view?usp=sharing",
+    downloadUrl:
+      "https://drive.google.com/uc?export=download&id=1aY3W6jziOLaWGftI8eCrsWfJHDZFd1AP",
+    changes: [
+      "Menu Jadwal baru: lihat kalender jadwal bulanan Anda langsung dari aplikasi.",
+      "Absen di luar radius OC kini langsung ditolak dengan pesan yang jelas, tidak lagi terkirim lalu gagal.",
+      "Perbaikan lembur: karyawan tanpa jadwal harian bisa lembur lagi setelah shift reguler selesai.",
+      "Perbaikan lembur lintas hari: lembur baru tak lagi terblokir oleh lembur kemarin yang absen keluarnya jatuh dini hari.",
+      "Info fitur baru muncul otomatis sekali setiap aplikasi diperbarui.",
+    ],
+  },
+  {
+    version: "1.5.1",
+    date: "1 Agustus 2026",
+    latest: false,
+    viewUrl:
+      "https://drive.google.com/file/d/1b3qXlPrZTh7VcigAKMDlZcY1zQCqBJd7/view?usp=sharing",
+    downloadUrl:
+      "https://drive.google.com/uc?export=download&id=1b3qXlPrZTh7VcigAKMDlZcY1zQCqBJd7",
+    changes: [
+      "Halaman Approval: atasan/SPV bisa menyetujui atau menolak absen bawahan.",
+      "Halaman Jadwal bulanan karyawan di web.",
+      "Perbaikan tampilan tipe absen keluar untuk shift lintas hari.",
+    ],
+  },
+];
+
+const LATEST = versions[0];
+const APK_VIEW_URL = LATEST.viewUrl;
+const APK_DOWNLOAD_URL = LATEST.downloadUrl;
 
 const steps = [
   {
@@ -24,7 +56,8 @@ const steps = [
     body: (
       <>
         <p style={{ margin: "0 0 10px" }}>
-          Tekan tombol di bawah. File akan terunduh dari Google Drive (ukuran
+          Tekan tombol di bawah untuk mengunduh aplikasi versi terbaru{" "}
+          <b>{LATEST.version}</b>. File akan terunduh dari Google Drive (ukuran
           sekitar 8 MB).
         </p>
         <a
@@ -415,6 +448,103 @@ const UpdateApp = () => {
           tipe keluar pasangannya.
         </p>
       </div>
+
+      <hr style={{ margin: "32px 0 24px", border: 0, borderTop: "1px solid #e0e0e0" }} />
+
+      <h2
+        style={{
+          color: "#e74c3c",
+          fontSize: "19px",
+          margin: "0 0 4px",
+          textAlign: "center",
+        }}
+      >
+        Riwayat Pembaruan
+      </h2>
+      <p
+        style={{
+          textAlign: "center",
+          color: "#666",
+          fontSize: "14px",
+          margin: "0 0 18px",
+        }}
+      >
+        Apa yang baru di tiap versi aplikasi
+      </p>
+
+      {versions.map((v) => (
+        <div
+          key={v.version}
+          style={{
+            background: v.latest ? "#eafaf1" : "#f8f9fa",
+            border: `1px solid ${v.latest ? "#27ae60" : "#ddd"}`,
+            borderRadius: "12px",
+            padding: "14px",
+            marginBottom: "16px",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              flexWrap: "wrap",
+              marginBottom: "10px",
+            }}
+          >
+            <span style={{ fontWeight: "bold", fontSize: "16px", color: "#2c3e50" }}>
+              Versi {v.version}
+            </span>
+            {v.latest && (
+              <span
+                style={{
+                  background: "#27ae60",
+                  color: "white",
+                  fontSize: "11px",
+                  fontWeight: "bold",
+                  padding: "2px 8px",
+                  borderRadius: "10px",
+                }}
+              >
+                TERBARU
+              </span>
+            )}
+            <span style={{ fontSize: "13px", color: "#888", marginLeft: "auto" }}>
+              {v.date}
+            </span>
+          </div>
+          <ul style={{ margin: 0, paddingLeft: "20px" }}>
+            {v.changes.map((c, i) => (
+              <li
+                key={i}
+                style={{
+                  fontSize: "14px",
+                  color: "#444",
+                  lineHeight: 1.6,
+                  marginBottom: "4px",
+                }}
+              >
+                {c}
+              </li>
+            ))}
+          </ul>
+          <a
+            href={v.downloadUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "inline-block",
+              marginTop: "10px",
+              fontSize: "13px",
+              color: v.latest ? "#1e8449" : "#e74c3c",
+              fontWeight: "bold",
+              textDecoration: "none",
+            }}
+          >
+            Unduh versi {v.version}
+          </a>
+        </div>
+      ))}
 
       <p
         style={{
