@@ -107,6 +107,30 @@ const createAbsensi = async (req, res) => {
     const isEarlyMorningKeluar =
       timeAbsenMoment.format("HH:mm:ss") < "12:00:00";
 
+    // KELUAR: is_lembur harus ikut sesi masuk yang ditutup, BUKAN hasil derive
+    // type-set hari ini. Tipe keluar cross-date bisa anggota set regular DAN
+    // lembur sekaligus (mis. SUBUH keluar id53: dipakai jadwal_harian regular +
+    // muncul via getOpenLemburKeluarTypes utk sesi lembur open) → aturan "regular
+    // menang" (baris atas) flip is_lembur ke 0 → guard keluar cari sesi is_lembur=0,
+    // sesi lembur open tak ketemu → error palsu "tidak ada absen masuk yang belum
+    // diselesaikan". Adopsi is_lembur dari sesi open yang cocok agar pairing benar.
+    if (isKeluar) {
+      const keluarKategori =
+        getTimeDB.kategori_absen ||
+        (getTimeDB.name
+          ? await absensiModel.getKeluarKategoriByName(getTimeDB.name)
+          : null) ||
+        null;
+      const openSesiForLembur = await sesiModel.findOpenSesiAnyLembur({
+        user_id: body.user_id,
+        kategori_absen: keluarKategori,
+        includeYesterday: isEarlyMorningKeluar,
+      });
+      if (openSesiForLembur) {
+        body.is_lembur = openSesiForLembur.is_lembur ? 1 : 0;
+      }
+    }
+
     // Hard-guard lembur. Dua jalur precondition:
     // - Jadwal-harian: user gantikan karyawan toko lain di shift beda (komplemen).
     //   Boleh lembur sebelum/sesudah shift regular hari itu — TAPI tidak saat
@@ -118,46 +142,53 @@ const createAbsensi = async (req, res) => {
       const isJadwalHarianUser =
         await absenManagementModel.userUsesJadwalHarian(body.user_id);
 
-      if (isJadwalHarianUser) {
-        const regularSesi = await sesiModel.getTodaySesiSummary(
-          body.user_id,
-          false,
-          true
-        );
-        if (regularSesi.hasOpen) {
-          removeUploadedImage(file.filename);
+      // Precondition MULAI lembur (hanya MASUK). KELUAR lembur menutup sesi yang
+      // sudah berjalan — jangan kena syarat ini, cukup guard lembur-masuk-exists
+      // di bawah. Tanpa penjagaan isMasuk: keluar lembur SUBUH cross-date (regular
+      // hari ini belum ada) salah terblokir "Lembur hanya bisa setelah regular
+      // selesai", atau jadwal-harian dgn sesi regular open salah terblokir.
+      if (isMasuk) {
+        if (isJadwalHarianUser) {
+          const regularSesi = await sesiModel.getTodaySesiSummary(
+            body.user_id,
+            false,
+            true
+          );
+          if (regularSesi.hasOpen) {
+            removeUploadedImage(file.filename);
 
-          return res.status(400).json({
-            message:
-              "Selesaikan shift regular Anda dulu (absen keluar) sebelum lembur.",
-            status: "failed",
-            status_code: "400",
-          });
-        }
-      } else {
-        const regularSesi = await sesiModel.getTodaySesiSummary(
-          body.user_id,
-          false
-        );
-        // Regular komplit = ada sesi regular closed, ATAU (fallback pra-sesi) count masuk+keluar.
-        let regularComplete = regularSesi.hasClosed;
-        if (!regularComplete && regularSesi.closedCount === 0 && regularSesi.openCount === 0) {
-          const regularToday = await absensiModel.getTodayDirectionSummaryByLembur(
+            return res.status(400).json({
+              message:
+                "Selesaikan shift regular Anda dulu (absen keluar) sebelum lembur.",
+              status: "failed",
+              status_code: "400",
+            });
+          }
+        } else {
+          const regularSesi = await sesiModel.getTodaySesiSummary(
             body.user_id,
             false
           );
-          regularComplete = regularToday.masuk >= 1 && regularToday.keluar >= 1;
-        }
+          // Regular komplit = ada sesi regular closed, ATAU (fallback pra-sesi) count masuk+keluar.
+          let regularComplete = regularSesi.hasClosed;
+          if (!regularComplete && regularSesi.closedCount === 0 && regularSesi.openCount === 0) {
+            const regularToday = await absensiModel.getTodayDirectionSummaryByLembur(
+              body.user_id,
+              false
+            );
+            regularComplete = regularToday.masuk >= 1 && regularToday.keluar >= 1;
+          }
 
-        if (!regularComplete) {
-          removeUploadedImage(file.filename);
+          if (!regularComplete) {
+            removeUploadedImage(file.filename);
 
-          return res.status(400).json({
-            message:
-              "Lembur hanya bisa dilakukan setelah absen masuk dan keluar regular hari ini selesai.",
-            status: "failed",
-            status_code: "400",
-          });
+            return res.status(400).json({
+              message:
+                "Lembur hanya bisa dilakukan setelah absen masuk dan keluar regular hari ini selesai.",
+              status: "failed",
+              status_code: "400",
+            });
+          }
         }
       }
 

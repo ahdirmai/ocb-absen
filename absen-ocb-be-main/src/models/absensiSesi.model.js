@@ -138,6 +138,35 @@ const findAnyOpenSesi = async (params, conn = dbpool) => {
   return rows.length > 0 ? rows[0] : null;
 };
 
+// Cari sesi open user TANPA filter is_lembur — untuk absen KELUAR. Dipakai
+// meng-adopsi is_lembur dari sesi masuk yang sedang dibuka, karena body.is_lembur
+// hasil derive type-set hari ini bisa salah bila tipe keluar cross-date kebetulan
+// anggota set regular DAN lembur (mis. SUBUH keluar id53: ada di jadwal regular +
+// sesi lembur open) → "regular menang" flip flag ke 0 → guard keluar cari sesi
+// is_lembur=0, sesi lembur open tak ketemu → error palsu "tidak ada absen masuk".
+// Match kategori (case-insensitive) bila tersedia agar pilih sesi yang benar saat
+// ada >1 sesi open. includeYesterday utk cross-midnight. Ambil yang terbaru.
+const findOpenSesiAnyLembur = async (params, conn = dbpool) => {
+  const { user_id, kategori_absen = null, includeYesterday = false } = params;
+
+  const dateFilter = includeYesterday
+    ? "s.tanggal >= (CURDATE() - INTERVAL 1 DAY)"
+    : "s.tanggal = CURDATE()";
+
+  const [rows] = await conn.query(
+    `SELECT s.sesi_id, s.tanggal, s.kategori_absen, s.jadwal_id, s.is_lembur
+     FROM absensi_sesi s
+     WHERE s.user_id = ?
+       AND s.status = 'open'
+       AND ${dateFilter}
+       AND (? IS NULL OR LOWER(s.kategori_absen) = LOWER(?))
+     ORDER BY s.created_at DESC, s.sesi_id DESC
+     LIMIT 1`,
+    [user_id, kategori_absen, kategori_absen]
+  );
+  return rows.length > 0 ? rows[0] : null;
+};
+
 // Ambil absen_keluar_id dari jadwal_harian tertentu — untuk validasi tipe keluar
 // pada jalur jadwal harian (tipe keluar harus == absen_keluar_id jadwalnya).
 const getJadwalKeluarId = async (jadwalId, conn = dbpool) => {
@@ -563,6 +592,7 @@ module.exports = {
   openSesi,
   findOpenSesi,
   findAnyOpenSesi,
+  findOpenSesiAnyLembur,
   getJadwalKeluarId,
   markStaleOpenSesiIncomplete,
   findSesiByAbsensiId,
