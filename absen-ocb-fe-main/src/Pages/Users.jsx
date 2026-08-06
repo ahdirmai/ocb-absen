@@ -1409,7 +1409,10 @@ const Users = () => {
               className="form-control"
               value={newUser.username}
               onChange={(e) =>
-                setNewUser({ ...newUser, username: e.target.value })
+                setNewUser({
+                  ...newUser,
+                  username: e.target.value.replace(/\s+/g, "."),
+                })
               }
             />
           </div>
@@ -1570,7 +1573,7 @@ const Users = () => {
                     onChange={(e) =>
                       setSelectedUser({
                         ...selectedUser,
-                        username: e.target.value,
+                        username: e.target.value.replace(/\s+/g, "."),
                       })
                     }
                   />

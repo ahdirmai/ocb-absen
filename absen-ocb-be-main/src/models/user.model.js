@@ -107,9 +107,10 @@ const createNewUsers = async(body, hashedPassword, imageUser)=>{
 // }
 const updateUsers = (body, idUser, imageUrl) => {
     const SQLQuery = `
-      UPDATE user 
-      SET 
+      UPDATE user
+      SET
         name = ?,
+        username = ?,
         imei = ?,
         photo_url =?,
         category_user = ?,
@@ -118,12 +119,13 @@ const updateUsers = (body, idUser, imageUrl) => {
         updated_at = ?,
         updated_by = ?
       WHERE user_id = ?`;
-  
+
     return dbpool.execute(SQLQuery, [
       body.name || null,
+      body.username || null,
     //   body.role || null,
       body.imei || null,
-      imageUrl, 
+      imageUrl,
       body.id_category || null,
       body.upline || null,
       body.enabled || null,
