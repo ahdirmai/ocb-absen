@@ -141,6 +141,24 @@ const createAbsensi = async (req, res) => {
     if (body.is_lembur === 1) {
       const isJadwalHarianUser =
         await absenManagementModel.userUsesJadwalHarian(body.user_id);
+      // SPV jaga toko: pilih OC + shift Sales Toko sendiri, tak wajib punya shift
+      // regular hari ini. Perlakukan seperti jadwal-harian (blok HANYA saat sesi
+      // regular OPEN = mid-shift, tak bisa di dua tempat), BUKAN syarat non-jadwal
+      // "regular komplit dulu" yang akan salah tolak SPV tanpa shift regular.
+      const isSpvLemburUser = await absenManagementModel.userIsSpvLembur(
+        body.user_id
+      );
+      const useMidShiftGuard = isJadwalHarianUser || isSpvLemburUser;
+
+      // SPV lembur jaga toko WAJIB approval atasan. Middleware hanya set approval
+      // bila regular komplit (validasiAbsensi.js) — SPV sering tak punya regular,
+      // jadi set eksplisit di sini agar lembur SPV tak auto-valid.
+      if (isSpvLemburUser) {
+        body.is_approval = 1;
+        body.reason = String(body.reason || "").trim()
+          ? `${body.reason}; Lembur SPV jaga toko - menunggu approval atasan`
+          : "Lembur SPV jaga toko - menunggu approval atasan";
+      }
 
       // Precondition MULAI lembur (hanya MASUK). KELUAR lembur menutup sesi yang
       // sudah berjalan — jangan kena syarat ini, cukup guard lembur-masuk-exists
@@ -148,7 +166,7 @@ const createAbsensi = async (req, res) => {
       // hari ini belum ada) salah terblokir "Lembur hanya bisa setelah regular
       // selesai", atau jadwal-harian dgn sesi regular open salah terblokir.
       if (isMasuk) {
-        if (isJadwalHarianUser) {
+        if (useMidShiftGuard) {
           const regularSesi = await sesiModel.getTodaySesiSummary(
             body.user_id,
             false,

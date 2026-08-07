@@ -384,6 +384,7 @@ const AbsenKaryawan = () => {
   const [loading, setLoading] = useState(false);
   const [now, setNow] = useState(new Date());
   const [usesJadwalHarian, setUsesJadwalHarian] = useState(false);
+  const [isSpvLembur, setIsSpvLembur] = useState(false);
   const [location, setLocation] = useState(initialLocation);
   const [locationError, setLocationError] = useState("");
   const [photo, setPhoto] = useState(null);
@@ -888,6 +889,7 @@ const AbsenKaryawan = () => {
           response.data.no_jadwal_assigned ? response.data.message : ""
         );
         setUsesJadwalHarian(Boolean(response.data.uses_jadwal_harian));
+        setIsSpvLembur(Boolean(response.data.is_spv_lembur));
 
         const todayStatus = buildTodayAttendanceStatus(historyRows);
         const hasCompletedRegularDay = hasCompletedRegularAttendanceStatus(todayStatus);
@@ -1759,10 +1761,12 @@ const AbsenKaryawan = () => {
         );
       })()}
 
-      {/* Staff jadwal-harian boleh lembur (gantikan shift lain) kapan saja KECUALI
-          saat sedang menjalani shift regular (regularInProgress). Non-jadwal tetap
-          wajib regular komplit dulu — jaga fix Aminnudin (button hidden mid-shift). */}
-      {hasAvailableLemburTypes && !effectiveLemburMode && (usesJadwalHarian ? !regularInProgress : hasCompletedRegularAttendance) && attendanceMode !== "lembur" && (
+      {/* Staff jadwal-harian & SPV jaga toko boleh lembur (gantikan shift lain)
+          kapan saja KECUALI saat sedang menjalani shift regular (regularInProgress).
+          Non-jadwal biasa tetap wajib regular komplit dulu — jaga fix Aminnudin
+          (button hidden mid-shift). SPV sering tak punya shift regular hari itu,
+          jadi pakai gate mid-shift, bukan syarat regular komplit. */}
+      {hasAvailableLemburTypes && !effectiveLemburMode && ((usesJadwalHarian || isSpvLembur) ? !regularInProgress : hasCompletedRegularAttendance) && attendanceMode !== "lembur" && (
         <button
           onClick={() => {
             setIsLemburMode(true);

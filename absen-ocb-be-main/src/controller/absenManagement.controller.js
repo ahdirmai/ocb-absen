@@ -205,6 +205,9 @@ const getTypeAbsenPerShift = async(req, res) =>{
             !jadwalStatus.hasJadwal &&
             uniqueData.length === 0;
 
+        // SPV jaga toko: FE longgar gate lembur (tak wajib regular komplit dulu).
+        const isSpvLembur = await absenManagementModel.userIsSpvLembur(userId);
+
         res.json({
             message: noJadwalAssigned
                 ? 'Belum ada jadwal absen yang ditetapkan admin untuk Anda hari ini.'
@@ -214,6 +217,7 @@ const getTypeAbsenPerShift = async(req, res) =>{
             is_absen_today : isAbsenToday,
             no_jadwal_assigned : noJadwalAssigned,
             uses_jadwal_harian : jadwalStatus.isShiftScheduled,
+            is_spv_lembur : isSpvLembur,
             data : uniqueData
         })
     }

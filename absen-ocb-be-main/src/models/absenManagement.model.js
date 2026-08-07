@@ -1,5 +1,9 @@
 const dbpool = require("../config/database");
 
+// Kategori SPV yang boleh lembur "jaga toko": pilih OC/toko + shift Sales Toko
+// mana pun sendiri (tanpa jadwal-harian, tanpa shift regular). id 12 = "SPV Area Unit 1".
+const SPV_LEMBUR_CATEGORIES = [12];
+
 const getAlltypeAbsen = () => {
   const SQLQuery = `SELECT t.absen_id, t.name , t.fee, t.description, t.retail_id, r.latitude, r.longitude, r.radius, r.name as retail_name, t.start_time, t.end_time, t.kategori_absen, t.is_cross_date, uc.category_user, uc.id_category as group_absen
                     FROM tipe_absen t
@@ -212,6 +216,53 @@ const getTypeAbsenByJadwal = async (userId) => {
   return [merged];
 };
 
+// True bila kategori user termasuk SPV yang boleh lembur "jaga toko".
+const userIsSpvLembur = async (userId) => {
+  if (SPV_LEMBUR_CATEGORIES.length === 0) return false;
+  const placeholders = SPV_LEMBUR_CATEGORIES.map(() => "?").join(",");
+  const [rows] = await dbpool.query(
+    `SELECT 1 FROM user
+     WHERE user_id = ? AND is_deleted = 0
+       AND category_user IN (${placeholders})
+     LIMIT 1`,
+    [userId, ...SPV_LEMBUR_CATEGORIES]
+  );
+  return rows.length > 0;
+};
+
+// Tipe lembur untuk SPV jaga toko: SEMUA tipe shift Sales Toko (cat 18/0), masuk
+// + keluar, exclude TRAINEE. Tanpa kategoriFilter (semua shift) & tanpa exclude
+// jadwal (SPV tak punya jadwal). retail = sumber koordinat; OC dipilih user di FE.
+// Gabung tipe keluar sesi lembur open (tutup sesi cross-date berjalan).
+const getSpvLemburTypes = async (openLemburKeluar) => {
+  const SQLQuery = `
+    SELECT DISTINCT
+      t.absen_id, t.name, t.description, t.kategori_absen,
+      t.start_time, t.end_time,
+      r.retail_id, r.name AS retail_name,
+      r.latitude, r.longitude, r.radius
+    FROM tipe_absen t
+    JOIN group_absen ga ON ga.absen_type_id = t.absen_id
+    LEFT JOIN retail r ON r.retail_id = t.retail_id
+    WHERE t.is_deleted = 0
+      AND (ga.id_category IN (18, 0))
+      AND (LOWER(t.description) LIKE '%masuk%' OR LOWER(t.description) LIKE '%keluar%' OR LOWER(t.description) LIKE '%pulang%')
+      AND t.name NOT LIKE '%TRAINEE%'
+    ORDER BY t.name ASC, t.description ASC`;
+  const [rows] = await dbpool.execute(SQLQuery, []);
+
+  // Gabung tipe keluar sesi lembur open (dedup by absen_id).
+  const seen = new Set(rows.map((r) => r.absen_id));
+  const merged = [...rows];
+  for (const r of openLemburKeluar || []) {
+    if (!seen.has(r.absen_id)) {
+      seen.add(r.absen_id);
+      merged.push(r);
+    }
+  }
+  return merged;
+};
+
 // Tipe absen lembur untuk Sales Toko (cat 18). Trainee (cat 21) TIDAK boleh —
 // dikecualikan (id_category IN (18,0) + name NOT LIKE '%TRAINEE%').
 // Selalu exclude absen_masuk_id + absen_keluar_id jadwal hari ini (dipakai regular).
@@ -229,6 +280,14 @@ const getLemburTypes = async (userId) => {
   // atau kategorinya kebetulan dibuang filter komplemen — else user tak bisa
   // menutup sesi lembur yang sedang berjalan.
   const openLemburKeluar = await getOpenLemburKeluarTypes(userId);
+
+  // SPV jaga toko: kategori SPV boleh lembur di SEMUA shift Sales Toko (Pagi/
+  // Sore/Malam/Subuh), pilih OC sendiri. Bukan jalur jadwal-harian & tak punya
+  // shift regular, jadi tak ada komplemen — kembalikan semua tipe shift Sales
+  // Toko. Cek sebelum cabang jadwal-harian di bawah.
+  if (await userIsSpvLembur(userId)) {
+    return [await getSpvLemburTypes(openLemburKeluar)];
+  }
 
   let assignedKategori = null;
   if (isJadwalHarian) {
@@ -555,6 +614,7 @@ module.exports = {
   getTypeAbsenPerShift,
   getShiftJadwalStatus,
   userUsesJadwalHarian,
+  userIsSpvLembur,
   getLemburTypes,
   checkFlagAbsen,
   createNewGroupAbsen,
