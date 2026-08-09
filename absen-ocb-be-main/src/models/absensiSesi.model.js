@@ -218,6 +218,36 @@ const markStaleOpenSesiIncomplete = async (conn, userId, isLembur = 0) => {
   return result.affectedRows || 0;
 };
 
+// Versi GLOBAL untuk scheduler: sapu SEMUA user + regular & lembur sekaligus.
+// Logika basi identik markStaleOpenSesiIncomplete (same-day lewat tengah malam,
+// cross-date lewat deadline keluar terjadwal + grace), tanpa filter user/is_lembur.
+// Pakai dbpool langsung (bukan conn transaksional) — job berdiri sendiri.
+const sweepStaleOpenSesiIncomplete = async () => {
+  const [result] = await dbpool.query(
+    `UPDATE absensi_sesi s
+       JOIN absensi a ON a.absensi_id = s.masuk_absensi_id
+       JOIN tipe_absen ta ON ta.absen_id = a.absen_type_id
+       LEFT JOIN tipe_absen tk
+         ON tk.name = ta.name AND tk.is_deleted = 0
+        AND (LOWER(tk.description) LIKE '%keluar%' OR LOWER(tk.description) LIKE '%pulang%')
+     SET s.status = 'incomplete', s.updated_at = NOW()
+     WHERE s.status = 'open'
+       AND (
+         (COALESCE(ta.is_cross_date, 0) = 0 AND s.tanggal < CURDATE())
+         OR (
+           COALESCE(ta.is_cross_date, 0) = 1
+           AND tk.start_time IS NOT NULL
+           AND (
+             TIMESTAMP(s.tanggal + INTERVAL 1 DAY, tk.start_time)
+             + INTERVAL ? HOUR
+           ) < NOW()
+         )
+       )`,
+    [CROSS_DATE_KELUAR_GRACE_HOURS]
+  );
+  return result.affectedRows || 0;
+};
+
 // Cari sesi yang memuat 1 baris absensi (sbg masuk atau keluar) — untuk koreksi.
 const findSesiByAbsensiId = async (conn, absenId) => {
   const [rows] = await conn.query(
@@ -595,6 +625,7 @@ module.exports = {
   findOpenSesiAnyLembur,
   getJadwalKeluarId,
   markStaleOpenSesiIncomplete,
+  sweepStaleOpenSesiIncomplete,
   findSesiByAbsensiId,
   updateSesiTanggal,
   updateSesiKategori,

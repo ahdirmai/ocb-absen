@@ -21,6 +21,7 @@ const jadwalHarianRoute = require('./routes/jadwalHarian')
 // const midllewareLogRequest = require('./middleware/logs');
 const createError = require('http-errors');
 const cors = require('cors');
+const { startStaleSesiScheduler } = require('./jobs/staleSesiScheduler');
 const app = express();
 app.use(cors({
     origin: true //allow semua origin
@@ -64,4 +65,5 @@ app.use((err, req, res, next) => {
 })
 app.listen(PORT, () => {
     console.log(`Success runing on Port ${PORT}`)
+    startStaleSesiScheduler()
 })

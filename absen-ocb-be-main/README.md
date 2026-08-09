@@ -29,6 +29,7 @@ node src/index.js
 | `DB_NAME` | Nama database |
 | `JWT_SECRET` | Secret untuk JWT token |
 | `MIGRATION_API_KEY` | API key untuk migration endpoints |
+| `STALE_SESI_SWEEP_MINUTES` | Interval scheduler sapu sesi open basi (menit, default 30) |
 
 ## API Endpoints
 
@@ -112,7 +113,9 @@ node src/index.js
 
 > **Batas 3 jam:** "Wajib keluar" berlaku sampai 3 jam setelah jam keluar terjadwal (`start_time` tipe keluar pasangan + grace 3 jam, konstanta `CROSS_DATE_KELUAR_GRACE_HOURS`). Lewat batas → dianggap lupa keluar: user boleh absen masuk baru.
 
-> **Auto-close sesi basi:** Saat user absen masuk lagi, `markStaleOpenSesiIncomplete` tandai sesi open lampau jadi `incomplete` — same-day (`is_cross_date=0`) tanggal < hari ini, atau cross-date (`is_cross_date=1`) yang sudah lewat batas 3 jam. Cegah blokir + jaga akurasi lembur-guard.
+> **Auto-close sesi basi (on-demand):** Saat user absen masuk lagi, `markStaleOpenSesiIncomplete` tandai sesi open lampau jadi `incomplete` — same-day (`is_cross_date=0`) tanggal < hari ini, atau cross-date (`is_cross_date=1`) yang sudah lewat batas 3 jam. Cegah blokir + jaga akurasi lembur-guard.
+
+> **Auto-close sesi basi (scheduler/berkala):** `src/jobs/staleSesiScheduler.js` — job zero-dep dipanggil di `app.listen`. Jalan sekali saat boot (bersihkan backlog) lalu tiap `STALE_SESI_SWEEP_MINUTES` menit (default 30, `setInterval` + `.unref()`). Panggil `sweepStaleOpenSesiIncomplete()` (versi GLOBAL `markStaleOpenSesiIncomplete` — semua user + regular & lembur, tanpa filter). Menutup sesi user yang lupa keluar & tak absen lagi tanpa menunggu aksi user. Overlap-guard via flag `running`. Diagnostik read-only: `src/jobs/_previewStaleSweep.js` (hitung tanpa ubah).
 
 > **Kategori tipe masuk = tipe keluar (WAJIB):** Pairing sesi cross-date match `absensi_sesi.kategori_absen`. `openSesi` ambil kategori dari tipe MASUK. Bila tipe MASUK `kategori_absen` NULL (mis. ter-null saat edit tipe absen di UI Kelola Tipe Absen), controller fallback ke kategori tipe KELUAR pasangan (`getKeluarKategoriByName`, match by `name`) agar masuk & keluar sekategori. **Jaga tipe masuk & keluar 1 shift punya `kategori_absen` SAMA** — beda kategori = sesi pecah (masuk menggantung open + keluar jadi `incomplete` terpisah). Banding kategori (guard tipe keluar FE + BE) **case-insensitive** — beda casing (mis. masuk `'sore'` vs keluar `'Sore'`) tetap dianggap sama agar tipe keluar tampil.
 

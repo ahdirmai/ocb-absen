@@ -1,0 +1,302 @@
+CREATE TABLE `absen_status` (
+  `status_id` int NOT NULL AUTO_INCREMENT,
+  `description` varchar(255) NOT NULL,
+  PRIMARY KEY (`status_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `absensi` (
+  `absensi_id` int NOT NULL AUTO_INCREMENT,
+  `user_id` int NOT NULL,
+  `retail_id` int NOT NULL,
+  `absen_type_id` int NOT NULL,
+  `absen_time` datetime NOT NULL,
+  `latitude` float NOT NULL,
+  `longitude` float NOT NULL,
+  `status_absen` int NOT NULL,
+  `photo_url` varchar(255) NOT NULL,
+  `potongan` int DEFAULT '0',
+  `reason` varchar(255) DEFAULT NULL,
+  `is_approval` int DEFAULT '0',
+  `is_valid` int DEFAULT '1',
+  `approval_by` int DEFAULT NULL,
+  `status_approval` int DEFAULT '0',
+  `approved_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`absensi_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `access_tokens` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `user_id` int NOT NULL,
+  `token` text NOT NULL,
+  `device_id` varchar(255) NOT NULL,
+  `device_type` varchar(50) NOT NULL,
+  `os_info` varchar(100) NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `is_revoked` tinyint DEFAULT '0',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `app_version` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `latest_version` varchar(45) NOT NULL,
+  `force_update` tinyint NOT NULL,
+  `update_url` text,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `approval_status` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `description_status` varchar(255) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `bonus` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `user_id` int NOT NULL DEFAULT '0',
+  `bonus` float NOT NULL,
+  `month` date NOT NULL,
+  `type_pb` int DEFAULT NULL,
+  `reason` varchar(100) DEFAULT NULL,
+  `created_at` datetime DEFAULT NULL,
+  `created_by` int DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  `updated_by` int DEFAULT NULL,
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by` int DEFAULT NULL,
+  `is_deleted` int DEFAULT '0',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `bonus_employes` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `user_id` int DEFAULT '0',
+  `id_bonus` int NOT NULL DEFAULT '0',
+  `created_at` datetime DEFAULT NULL,
+  `created_by` int DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `file_laporan` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `name_file` varchar(255) NOT NULL,
+  `description` text,
+  `file_url` varchar(255) NOT NULL,
+  `created_at` datetime DEFAULT NULL,
+  `created_by` int DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  `updated_by` int DEFAULT NULL,
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by` int DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `group_absen` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `absen_type_id` int DEFAULT NULL,
+  `id_category` int DEFAULT '0',
+  `created_at` datetime DEFAULT NULL,
+  `created_by` int DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  `updated_by` int DEFAULT NULL,
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by` int DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `log_activity` (
+  `log_id` int NOT NULL AUTO_INCREMENT,
+  `table_name` varchar(100) NOT NULL,
+  `action` enum('INSERT','UPDATE','DELETE') NOT NULL,
+  `dataquery` text,
+  `user_id` int DEFAULT NULL,
+  `timestamp` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`log_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `navigation_access` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `category_id` int NOT NULL,
+  `menu_id` int NOT NULL,
+  `created_at` datetime DEFAULT NULL,
+  `created_by` varchar(45) DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  `updated_by` varchar(45) DEFAULT NULL,
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by` varchar(45) DEFAULT NULL,
+  `is_deleted` int DEFAULT '0',
+  PRIMARY KEY (`id`),
+  KEY `category_id` (`category_id`),
+  KEY `menu_id` (`menu_id`),
+  CONSTRAINT `navigation_access_ibfk_2` FOREIGN KEY (`menu_id`) REFERENCES `navigation_links` (`id`),
+  CONSTRAINT `navigation_access_ibfk_3` FOREIGN KEY (`category_id`) REFERENCES `user_category` (`id_category`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `navigation_links` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL,
+  `path` varchar(255) DEFAULT NULL,
+  `icon` varchar(255) DEFAULT NULL,
+  `submenu_id` varchar(255) DEFAULT NULL,
+  `parent_id` int DEFAULT NULL,
+  `is_active` tinyint(1) DEFAULT '1',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `offday` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `user_id` int NOT NULL DEFAULT '0',
+  `tanggal` date NOT NULL,
+  `type_off` int NOT NULL,
+  `reason` text,
+  `created_at` datetime DEFAULT NULL,
+  `created_by` int DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  `updated_by` int DEFAULT NULL,
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by` int DEFAULT NULL,
+  `is_deleted` int DEFAULT '0',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `offday_employes` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `user_id` int NOT NULL DEFAULT '0',
+  `id_offday` int NOT NULL,
+  `created_at` datetime DEFAULT NULL,
+  `created_by` int DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `potongan` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `category` varchar(100) DEFAULT NULL,
+  `value` float NOT NULL DEFAULT '0',
+  `keterangan` varchar(255) DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  `updated_by` varchar(45) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `retail` (
+  `retail_id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL,
+  `latitude` float DEFAULT NULL,
+  `longitude` float DEFAULT NULL,
+  `radius` float DEFAULT NULL,
+  `is_active` int DEFAULT NULL,
+  `created_at` datetime DEFAULT NULL,
+  `created_by` varchar(100) DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  `updated_by` varchar(100) DEFAULT NULL,
+  `is_deleted` int DEFAULT '0',
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by` varchar(100) DEFAULT NULL,
+  PRIMARY KEY (`retail_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `shift_employes` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `shifting_id` int NOT NULL DEFAULT '0',
+  `user_id` int NOT NULL,
+  `created_at` datetime DEFAULT NULL,
+  `created_by` int DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `shifting` (
+  `shifting_id` int NOT NULL AUTO_INCREMENT,
+  `user_id` int DEFAULT NULL,
+  `retail_id` varchar(255) NOT NULL,
+  `start_date` date NOT NULL,
+  `end_date` date NOT NULL,
+  `created_at` datetime DEFAULT NULL,
+  `created_by` varchar(100) DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  `updated_by` varchar(100) DEFAULT NULL,
+  `is_deleted` int DEFAULT '0',
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by` varchar(100) DEFAULT NULL,
+  PRIMARY KEY (`shifting_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `tipe_absen` (
+  `absen_id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(45) NOT NULL,
+  `description` text NOT NULL,
+  `fee` float NOT NULL DEFAULT '0',
+  `group_absen` int DEFAULT '0',
+  `start_time` time NOT NULL,
+  `end_time` time NOT NULL,
+  `kategori_absen` varchar(45) DEFAULT NULL,
+  `retail_id` int DEFAULT NULL,
+  `is_deleted` int DEFAULT '0',
+  `created_at` datetime DEFAULT NULL,
+  `created_by` varchar(100) DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  `updated_by` varchar(100) DEFAULT NULL,
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by` varchar(100) DEFAULT NULL,
+  PRIMARY KEY (`absen_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `type_off` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `type_off` varchar(45) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `type_punishment` (
+  `id` int NOT NULL,
+  `type_pb` varchar(100) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `user` (
+  `user_id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL,
+  `username` varchar(100) NOT NULL,
+  `password` varchar(225) DEFAULT NULL,
+  `role` int DEFAULT NULL,
+  `category_user` int NOT NULL,
+  `imei` varchar(225) DEFAULT NULL,
+  `photo_url` varchar(255) DEFAULT NULL,
+  `upline` int DEFAULT '0',
+  `enabled` int DEFAULT NULL,
+  `is_deleted` int DEFAULT '0',
+  `created_at` datetime DEFAULT NULL,
+  `created_by` varchar(100) DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  `updated_by` varchar(100) DEFAULT NULL,
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by` varchar(100) DEFAULT NULL,
+  PRIMARY KEY (`user_id`),
+  UNIQUE KEY `username_UNIQUE` (`username`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `user_category` (
+  `id_category` int NOT NULL AUTO_INCREMENT,
+  `role_id` int NOT NULL,
+  `category_user` varchar(255) NOT NULL,
+  `created_at` datetime DEFAULT NULL,
+  `created_by` varchar(11) DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  `updated_by` varchar(11) DEFAULT NULL,
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by` varchar(11) DEFAULT NULL,
+  PRIMARY KEY (`id_category`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
+CREATE TABLE `user_role` (
+  `role_id` int NOT NULL AUTO_INCREMENT,
+  `name_role` varchar(255) NOT NULL,
+  `created_at` datetime DEFAULT NULL,
+  `created_by` varchar(11) DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  `updated_by` varchar(11) DEFAULT NULL,
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by` varchar(11) DEFAULT NULL,
+  PRIMARY KEY (`role_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+---
